@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: ds-xbom-lib
+Version: 6.0.0
+Summary: xBOM library for owasp depscan
+Author-email: Team AppThreat <cloud@appthreat.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/owasp-dep-scan/dep-scan
+Project-URL: Bug-Tracker, https://github.com/owasp-dep-scan/dep-scan/issues
+Project-URL: Funding, https://owasp.org/donate/?reponame=www-project-dep-scan&title=OWASP+depscan
+Project-URL: requires-python, >=3.10
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: System Administrators
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Security
+Classifier: Topic :: Utilities
+Description-Content-Type: text/markdown

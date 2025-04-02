@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/ds_xbom_lib.egg-info/PKG-INFO
+src/ds_xbom_lib.egg-info/SOURCES.txt
+src/ds_xbom_lib.egg-info/dependency_links.txt
+src/ds_xbom_lib.egg-info/top_level.txt
+src/xbom_lib/__init__.py
+src/xbom_lib/blint.py
+src/xbom_lib/cdxgen.py

@@ -82,16 +82,31 @@ def create_bom(bom_file, src_dir=".", options=None):
     return bom_result.success and os.path.exists(bom_file)
 
 def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
-    # Убедись, что cdxgen установлен глобально (через npm)
+    print("Generating SBOM")
+
+    abs_src = os.path.abspath(src_dir)
+    abs_out = os.path.abspath(output_file)
+
+    # Папка, в которую сохраняем результат
+    out_dir = os.path.dirname(abs_out)
+    out_filename = os.path.basename(abs_out)
+
+    # Монтируем две папки в контейнер
+    # src_dir -> /src
+    # out_dir -> /out
+    docker_args = [
+        "docker", "run", "--rm",
+        "-v", f"{abs_src}:/src",
+        "-v", f"{out_dir}:/out",
+        "ghcr.io/cyclonedx/cdxgen",
+        "/src",                  #  путь к исходникам внутри контейнера
+        "-o", f"/out/{out_filename}"  #  путь до выходного файла
+    ]
+
     try:
-        result = subprocess.run(
-            ["cdxgen", src_dir, "-o", output_file],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        # print("CDXGen output:", result.stdout)
+        subprocess.run(docker_args, check=True)
+        print(f"[✔] SBOM saved: {abs_out}")
         return True
     except subprocess.CalledProcessError as e:
-        print("Ошибка при вызове cdxgen:", e.stderr)
+        print(f"[✖] SBOM generation failure: {e}")
         return False

@@ -115,6 +115,9 @@ def check_requirements():
     ...
 
 if __name__ == "__main__":
+    """
+    SCA Scanner with reachability analysis
+    """
     parser = argparse.ArgumentParser(description="DepReach — Next Gen SCA analyzer")
     parser.add_argument("--input", "-i", required=True, help="Path to source code directory")
     parser.add_argument("--output", "-o", required=True, help="Path to output result file (JSON)")

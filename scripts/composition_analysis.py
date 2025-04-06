@@ -1,14 +1,18 @@
 import json
 import os
+import warnings
+
 from custom_json_diff.lib.utils import json_load
 from vdb.lib.search import search_by_any, search_by_purl_like
 from scripts.detect_type import detect_project_type
 from typing import List, Dict
+from pydantic import BaseModel
+from itertools import chain
 
+warnings.filterwarnings("ignore", category=UserWarning)
 
 def serialize_source_data(source_data):
     try:
-        from pydantic import BaseModel
         if hasattr(source_data, "root") and isinstance(source_data.root, BaseModel):
             return source_data.root.model_dump()
         return source_data
@@ -111,16 +115,16 @@ def find_affected_version(cve_object: dict) -> str | None:
     Использует find_by_path, чтобы достать lessThan или lessThanOrEqual из cve_object
     """
     # Получаем список всех версий
-    versions = find_by_path(cve_object, ["containers", "cna", "affected", 0, "versions"])
+    versions = find_by_path(cve_object, ["containers", "cna", "affected", "0", "versions", "0"])
     if not versions:
         return None
 
     for version_entry in versions:
         # Сначала пытаемся взять lessThan, если нет — lessThanOrEqual
         if version := version_entry.get("lessThan"):
-            return version
+            return "<" + version
         if version := version_entry.get("lessThanOrEqual"):
-            return version
+            return "<=" + version
 
     return None
 
@@ -147,6 +151,7 @@ def extract_fixed_version(vuln):
     return vuln.get("fixed_location")
 
 def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
+    print("Scanning")
     if not os.path.exists(bom_file):
         raise FileNotFoundError(f"No BOM found at {bom_file}")
 
@@ -179,6 +184,21 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
 
             }
             base_score, base_severity = extract_metrics(cve_object)
+            refs_raw = find_by_path(cve_object, ["containers", "cna", "references"])
+            flat_refs = list(chain.from_iterable(r for r in refs_raw if isinstance(r, list)))
+            urls = [r.get("url") for r in flat_refs if isinstance(r, dict) and "url" in r]
+
+            def render_refs(refs: list[str], max_refs=2):
+                if not refs:
+                    return ""
+                shown = refs[:max_refs]
+                rest_count = len(refs) - max_refs
+                # Рендерим ссылки по одной в строке
+                lines = [f"[link={url}]{url}[/link]" for url in shown]
+                if rest_count > 0:
+                    lines.append(f"...and {rest_count} more")
+                return "\n".join(lines)
+
             v = {
                 "package": comp.get("name"),
                 "installed_version": extract_version_from_purl(purl),
@@ -186,10 +206,20 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
                 "cve": vuln.get("cve_id"),
                 "severity": base_severity,
                 "score": base_score,
-                "description": find_by_path(cve_object, ["containers", "cna", "description", "value"]),
+                "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
                 "affected_version": find_affected_version(cve_object),
-                "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])
+                "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
+                "references": render_refs(urls)
             }
             all_vulns.append(v)
 
-    return all_vulns
+    seen = set()
+    unique_vulns = []
+
+    for v in all_vulns:
+        key = (v["package"], v["cve"], v["affected_version"])
+        if key not in seen:
+            seen.add(key)
+            unique_vulns.append(v)
+
+    return unique_vulns

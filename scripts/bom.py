@@ -105,8 +105,8 @@ def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
 
     try:
         subprocess.run(docker_args, check=True)
-        print(f"[✔] SBOM saved: {abs_out}")
+        print(f"SBOM saved: {abs_out}")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"[✖] SBOM generation failure: {e}")
+        print(f"SBOM generation failure: {e}")
         return False

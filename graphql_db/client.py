@@ -1,11 +1,10 @@
-# graphql_client.py
 from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 import asyncio
 
 from gql.transport.exceptions import TransportQueryError
 
-transport = AIOHTTPTransport(url="http://localhost:5000/graphql")
+transport = AIOHTTPTransport(url="http://localhost:5555/graphql")
 client = Client(transport=transport, fetch_schema_from_transport=True)
 
 async def query_reachability_by_purl(purl: str):

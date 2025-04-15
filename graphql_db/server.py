@@ -2,9 +2,14 @@ import strawberry
 from typing import List, Optional
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
+from models import VulnerabilityModel, Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-# Псевдо-хранилище — замени на SQLite или файл
-vuln_cache = {}
+engine = create_engine("sqlite:///vulns.db", connect_args={"check_same_thread": False})
+Base.metadata.create_all(engine)
+SessionLocal = sessionmaker(bind=engine)
+
 
 @strawberry.input
 class ReachabilityInput:
@@ -50,31 +55,65 @@ class Vulnerability:
 class Query:
     @strawberry.field
     def get_vulns_by_purl(self, purl: str) -> List[Vulnerability]:
-        return vuln_cache.get(purl, [])
+        db = SessionLocal()
+        try:
+            vulns = db.query(VulnerabilityModel).filter_by(purl=purl).all()
+            return [
+                Vulnerability(
+                    purl=v.purl,
+                    package=v.package,
+                    installed=v.installed,
+                    cve=v.cve,
+                    description=v.description,
+                    severity=v.severity,
+                    score=v.score,
+                    affectedVersion=v.affected_version,
+                    CWE=v.cwe,
+                    references=v.references,
+                    reachability=Reachability(
+                        is_reachable=v.reachability.get("is_reachable", "Unknown"),
+                        changed_funcs=v.reachability.get("changed_funcs"),
+                        reachable_funcs=v.reachability.get("reachable_funcs")
+                    )
+                ) for v in vulns
+            ]
+        finally:
+            db.close()
+
 
 @strawberry.type
 class Mutation:
     @strawberry.mutation
     def add_vulnerability(self, vuln: VulnerabilityInput) -> bool:
-        vuln_obj = Vulnerability(
-            purl=vuln.purl,
-            package=vuln.package,
-            installed=vuln.installed,
-            cve=vuln.cve,
-            description=vuln.description,
-            severity=vuln.severity,
-            score=vuln.score,
-            affected_version=vuln.affected_version,
-            CWE=vuln.CWE,
-            references=vuln.references,
-            reachability=Reachability(
-                is_reachable=vuln.reachabilityData.is_reachable,
-                changed_funcs=vuln.reachabilityData.changed_funcs,
-                reachable_funcs=vuln.reachabilityData.reachable_funcs
+        db = SessionLocal()
+        try:
+            vuln_obj = VulnerabilityModel(
+                purl=vuln.purl,
+                package=vuln.package,
+                installed=vuln.installed,
+                cve=vuln.cve,
+                description=vuln.description,
+                severity=vuln.severity,
+                score=vuln.score,
+                affected_version=vuln.affectedVersion,
+                cwe=vuln.CWE,
+                references=vuln.references,
+                reachability={
+                    "is_reachable": vuln.reachabilityData.is_reachable,
+                    "changed_funcs": vuln.reachabilityData.changed_funcs,
+                    "reachable_funcs": vuln.reachabilityData.reachable_funcs
+                }
             )
-        )
-        vuln_cache.setdefault(vuln.purl, []).append(vuln_obj)
-        return True
+            db.add(vuln_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            print(f"[error] DB insert failed: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
 

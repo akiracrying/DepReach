@@ -2,19 +2,24 @@
 import re
 import argparse
 import os
-from logging import DEBUG
+import warnings
+import asyncio
 
 from scripts.bom import generate_sbom_with_cdxgen
 from scripts.detect_type import detect_project_type
-from scripts.reachability import check_reachability, extract_library_function_calls #create_codeql_database, extract_project_functions_with_codeql
+from scripts.reachability import check_reachability, extract_library_function_calls, build_call_graph
 from scripts.update_db import update_vdb
-from colorama import Fore, Style
-
 from scripts.composition_analysis import check_vulnerabilities_from_sbom
+
+from graphql_db.client import query_reachability_by_purl, add_vuln_to_graphql
+
+from colorama import Fore, Style
 from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.markup import escape
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 def show_logo():
     logo_dep = r"""
@@ -45,7 +50,7 @@ def format_description(desc: str, link: str = None) -> str:
 
     # Превращаем \n, \t и т.д. в реальные символы
     try:
-        desc = desc.encode().decode("unicode_escape")
+        desc = desc.encode().decode(r"unicode_escape")
     except Exception:
         pass  # если вдруг строка уже норм
 
@@ -153,18 +158,6 @@ def dep_reach(args):
     if not project_type:
         project_type = "universal"
 
-    DEBUG = False
-    if DEBUG:
-        commit_url = "https://github.com/pallets/flask/commit/b178e89e4456e777b1a7ac6d7199052d0dfdbbbe"
-
-        # Список функций проекта (получишь через pycg, pyan, или CodeQL)
-        project_functions = ["jsonify", "load_json", "get_json"]
-
-        result = check_reachability(commit_url, project_functions)
-
-        print(result)
-        exit("DEBUGEXIT")
-
     # Имя sbom файла рядом с output, с именем {project_name}_sbom.json
     project_name = os.path.basename(os.path.normpath(src_dir))
     output_dir = os.path.dirname(output_file)
@@ -178,28 +171,31 @@ def dep_reach(args):
         generate_sbom_with_cdxgen(src_dir, sbom_file)
         vulns = check_vulnerabilities_from_sbom(src_dir, sbom_file)
 
-
-        #codeql_db_path = f"{output_dir}/{project_name}_codeql_db" #os.path.join(output_dir, f"{project_name}_codeql_db")
-
-        #success = create_codeql_database(src_dir, codeql_db_path, language=project_type[0])
-
-        #if not success:
-        #    print("[!] Failed to create CodeQL database.")
-        #    return
-
-        # Извлекаем вызываемые функции из проекта
-        project_functions = extract_library_function_calls(src_dir)
-
         if vulns:
+            project_functions = extract_library_function_calls(src_dir)
+            call_graph = build_call_graph(src_dir)
+
             for vuln in vulns:
-                report = check_reachability(vuln["references"], project_functions)
+                cached = asyncio.run(query_reachability_by_purl(vuln["purl"]))
+
+                match = next(
+                    (entry for entry in cached if entry["cve"] == vuln["cve"]),
+                    None
+                )
+
+                if match:
+                    vuln["reachability"] = match["reachability"]
+                    print(f"[cache] Used GraphQL cache for {vuln['purl']} (CVE: {vuln['cve']})")
+                    continue
+
+                report = check_reachability(vuln["references"], project_functions, call_graph)
                 vuln["reachability"] = report
-        else:
-            return "No vulnerabilities found."
-        # выводим в консоль красиво
+
+                asyncio.run(add_vuln_to_graphql(vuln))
+                print(f"[graphql] Added new vulnerability info for {vuln['purl']} (CVE: {vuln['cve']})")
+
         print_vulns(vulns)
 
-        # сохраняем в файл
         os.makedirs(output_dir, exist_ok=True)
         with open(output_file, "w", encoding="utf-8") as f:
             import json

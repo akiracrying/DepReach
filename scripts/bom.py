@@ -91,6 +91,14 @@ def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
     out_dir = os.path.dirname(abs_out)
     out_filename = os.path.basename(abs_out)
 
+    if os.path.exists(abs_out):
+        try:
+            os.remove(abs_out)
+            print(f"Old SBOM file removed: {abs_out}")
+        except Exception as e:
+            print(f"Error removing file")
+            exit(1)
+
     # Монтируем две папки в контейнер
     # src_dir -> /src
     # out_dir -> /out

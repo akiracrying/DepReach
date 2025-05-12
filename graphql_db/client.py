@@ -1,8 +1,10 @@
 from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 import asyncio
+import logging
 
 from gql.transport.exceptions import TransportQueryError
+logging.getLogger("gql.transport.aiohttp").setLevel(logging.CRITICAL)
 
 transport = AIOHTTPTransport(url="http://localhost:5555/graphql")
 client = Client(transport=transport, fetch_schema_from_transport=True)

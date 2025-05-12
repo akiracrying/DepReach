@@ -186,18 +186,22 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
             flat_refs = list(chain.from_iterable(r for r in refs_raw if isinstance(r, list)))
             urls = [str(r.get("url")) for r in flat_refs if isinstance(r, dict) and "url" in r]
 
-            v = {
-                "package": comp.get("name"),
-                "installed_version": extract_version_from_purl(purl),
-                "purl": purl,
-                "cve": vuln.get("cve_id"),
-                "severity": base_severity,
-                "score": base_score,
-                "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
-                "affected_version": find_affected_version(cve_object),
-                "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
-                "references": urls
-            }
+            try:
+                v = {
+                    "package": comp.get("name"),
+                    "installed_version": extract_version_from_purl(purl),
+                    "purl": purl,
+                    "cve": vuln.get("cve_id"),
+                    "severity": base_severity,
+                    "score": base_score,
+                    "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
+                    "affected_version": find_affected_version(cve_object),
+                    "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
+                    "references": urls
+                }
+            except Exception as e:
+                print(find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"]), e)
+                continue
             all_vulns.append(v)
 
     seen = set()

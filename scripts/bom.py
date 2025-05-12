@@ -1,15 +1,9 @@
 import os
-import shutil
 import subprocess
 from urllib.parse import unquote_plus
 
 from defusedxml.ElementTree import parse
-from xbom_lib.blint import BlintGenerator
-from xbom_lib.cdxgen import (
-    CdxgenGenerator,
-    CdxgenImageBasedGenerator,
-    CdxgenServerGenerator,
-)
+
 
 def parse_bom_ref(bomstr, licenses=None):
     if bomstr:
@@ -59,27 +53,6 @@ def get_pkg_list(xmlfile):
                     licenses = get_licenses(ele)
                     pkgs.append(get_package(ele, licenses))
     return pkgs
-
-def create_bom(bom_file, src_dir=".", options=None):
-    options = options or {}
-    project_type = options.get("project_type", [])
-    bom_engine = options.get("bom_engine", "")
-
-    if bom_engine == "BlintGenerator":
-        blint_lib = BlintGenerator(src_dir, bom_file, options=options)
-        bom_result = blint_lib.generate()
-        return bom_result.success and os.path.exists(bom_file)
-
-    cdxgen_server = options.get("cdxgen_server")
-    cdxgen_lib = CdxgenServerGenerator if cdxgen_server else CdxgenGenerator
-
-    if bom_engine == "CdxgenImageBasedGenerator" or (
-        bom_engine == "auto" and shutil.which(os.getenv("DOCKER_CMD", "docker"))
-    ):
-        cdxgen_lib = CdxgenImageBasedGenerator
-
-    bom_result = cdxgen_lib(src_dir, bom_file, options=options).generate()
-    return bom_result.success and os.path.exists(bom_file)
 
 def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
     print("Generating SBOM")

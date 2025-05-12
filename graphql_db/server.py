@@ -1,8 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import strawberry
 from typing import List, Optional
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
-from models import VulnerabilityModel, Base
+from graphql_db.models import VulnerabilityModel, Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 

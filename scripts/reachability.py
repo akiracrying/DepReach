@@ -28,6 +28,7 @@ def extract_functions_from_diff(diff_text):
 
 def check_reachability(vuln_references, component_usage, project_call_graph=None, purl: str = None, imports_data = "data"):
     commit_links = extract_commit_links(vuln_references)
+    commit_links = set(commit_links)
     reachability_report = {}
 
     if not commit_links:

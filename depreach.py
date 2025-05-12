@@ -2,6 +2,7 @@
 import re
 import argparse
 import os
+import time
 import warnings
 import asyncio
 
@@ -131,7 +132,16 @@ def print_vulns(vulns: list[dict]):
                     lines = []
                     for i, (url, info) in enumerate(reach.items(), 1):
                         if info != "Unknown":
-                            mark = "[green]✅[/green]" if info.get("is_reachable") else "[red]❌[/red]"
+                            try:
+                                mark = "[green]✅[/green]" if info.get("is_reachable") else "[red]❌[/red]"
+                            except Exception as e:
+                                status = reach.get("isReachable")
+                                if status == "True":
+                                    mark = "[green]✅[/green]"
+                                elif status == "False":
+                                    mark = "[red]❌[/red]"
+                                else:
+                                    mark = "Unknown"
                         else:
                             mark = "Unknown"
                         #short_url = url.split("/")[-1][:16]  # Можно сделать короче
@@ -174,25 +184,26 @@ def dep_reach(args):
         if vulns:
             project_functions = extract_library_function_calls(src_dir)
             call_graph = build_call_graph(src_dir)
+            GRAPHQL_USE = None
 
-            for vuln in vulns:
-                cached = asyncio.run(query_reachability_by_purl(vuln["purl"]))
+            if GRAPHQL_USE:
+                for vuln in vulns:
+                    cached = asyncio.run(query_reachability_by_purl(vuln["purl"]))
 
-                match = next(
-                    (entry for entry in cached if entry["cve"] == vuln["cve"]),
-                    None
-                )
+                    match = next(
+                        (entry for entry in cached if entry["cve"] == vuln["cve"]),
+                        None
+                    )
 
-                if match:
-                    vuln["reachability"] = match["reachability"]
-                    print(f"[cache] Used GraphQL cache for {vuln['purl']} (CVE: {vuln['cve']})")
-                    continue
+                    if match:
+                        vuln["reachability"] = match["reachability"]
+                        print(f"[cache] Used GraphQL cache for {vuln['purl']} (CVE: {vuln['cve']})")
+                        continue
 
-                report = check_reachability(vuln["references"], project_functions, call_graph)
-                vuln["reachability"] = report
+                    report = check_reachability(vuln["references"], project_functions, call_graph)
+                    vuln["reachability"] = report
 
-                asyncio.run(add_vuln_to_graphql(vuln))
-                print(f"[graphql] Added new vulnerability info for {vuln['purl']} (CVE: {vuln['cve']})")
+                    asyncio.run(add_vuln_to_graphql(vuln))
 
         print_vulns(vulns)
 
@@ -213,4 +224,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+
+    start_time = time.time()  # начало отсчета времени
+
     dep_reach(args)
+
+    end_time = time.time()  # окончание
+    elapsed = end_time - start_time
+    print(f"[INFO] dep_reach completed in {elapsed:.2f} seconds")

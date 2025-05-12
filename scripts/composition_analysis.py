@@ -6,7 +6,7 @@ from custom_json_diff.lib.utils import json_load
 from vdb.lib.search import search_by_any, search_by_purl_like
 from scripts.detect_type import detect_project_type
 from typing import List, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, AnyUrl
 from itertools import chain
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -160,9 +160,7 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
     all_vulns = []
 
     # Определяем тип проекта
-    project_type = detect_project_type(src_dir)
-    if not project_type:
-        project_type = "universal"
+
 
     for comp in components:
         purl = comp.get("purl")
@@ -186,31 +184,24 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
             base_score, base_severity = extract_metrics(cve_object)
             refs_raw = find_by_path(cve_object, ["containers", "cna", "references"])
             flat_refs = list(chain.from_iterable(r for r in refs_raw if isinstance(r, list)))
-            urls = [r.get("url") for r in flat_refs if isinstance(r, dict) and "url" in r]
+            urls = [str(r.get("url")) for r in flat_refs if isinstance(r, dict) and "url" in r]
 
-            def render_refs(refs: list[str], max_refs=2):
-                if not refs:
-                    return ""
-                shown = refs[:max_refs]
-                rest_count = len(refs) - max_refs
-                # Рендерим ссылки по одной в строке
-                lines = [f"[link={url}]{url}[/link]" for url in shown]
-                if rest_count > 0:
-                    lines.append(f"...and {rest_count} more")
-                return "\n".join(lines)
-
-            v = {
-                "package": comp.get("name"),
-                "installed_version": extract_version_from_purl(purl),
-                "purl": purl,
-                "cve": vuln.get("cve_id"),
-                "severity": base_severity,
-                "score": base_score,
-                "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
-                "affected_version": find_affected_version(cve_object),
-                "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
-                "references": render_refs(urls)
-            }
+            try:
+                v = {
+                    "package": comp.get("name"),
+                    "installed_version": extract_version_from_purl(purl),
+                    "purl": purl,
+                    "cve": vuln.get("cve_id"),
+                    "severity": base_severity,
+                    "score": base_score,
+                    "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
+                    "affected_version": find_affected_version(cve_object),
+                    "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
+                    "references": urls
+                }
+            except Exception as e:
+                print(find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"]), e)
+                continue
             all_vulns.append(v)
 
     seen = set()

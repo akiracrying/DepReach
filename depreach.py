@@ -186,8 +186,8 @@ def dep_reach(args):
             call_graph = build_call_graph(src_dir)
             GRAPHQL_USE = None
 
-            if GRAPHQL_USE:
-                for vuln in vulns:
+            for vuln in vulns:
+                if GRAPHQL_USE:
                     cached = asyncio.run(query_reachability_by_purl(vuln["purl"]))
 
                     match = next(
@@ -200,9 +200,10 @@ def dep_reach(args):
                         print(f"[cache] Used GraphQL cache for {vuln['purl']} (CVE: {vuln['cve']})")
                         continue
 
-                    report = check_reachability(vuln["references"], project_functions, call_graph)
-                    vuln["reachability"] = report
+                report = check_reachability(vuln["references"], project_functions, call_graph)
+                vuln["reachability"] = report
 
+                if GRAPHQL_USE:
                     asyncio.run(add_vuln_to_graphql(vuln))
 
         print_vulns(vulns)

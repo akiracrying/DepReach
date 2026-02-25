@@ -1,6 +1,8 @@
 import json
 import os
 import warnings
+import logging
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from custom_json_diff.lib.utils import json_load
 from vdb.lib.search import search_by_any, search_by_purl_like
@@ -10,6 +12,8 @@ from pydantic import BaseModel, AnyUrl
 from itertools import chain
 
 warnings.filterwarnings("ignore", category=UserWarning)
+logger = logging.getLogger(__name__)
+MAX_SCAN_WORKERS = 8
 
 def serialize_source_data(source_data):
     try:
@@ -150,63 +154,73 @@ def extract_fixed_version(vuln):
                     return getattr(ver, "version", "")
     return vuln.get("fixed_location")
 
+def _process_one_component(comp: Dict) -> List[Dict]:
+    """Обрабатывает один компонент SBOM, возвращает список записей об уязвимостях."""
+    purl = comp.get("purl")
+    if not purl:
+        return []
+
+    results = search_by_any(purl, with_data=True)
+    if not results:
+        results = search_by_purl_like(purl, with_data=True)
+
+    out = []
+    for vuln in results:
+        cve_object = serialize_source_data(vuln.get("source_data"))
+        base_score, base_severity = extract_metrics(cve_object)
+        refs_raw = find_by_path(cve_object, ["containers", "cna", "references"])
+        flat_refs = list(chain.from_iterable(r for r in refs_raw if isinstance(r, list)))
+        urls = [str(r.get("url")) for r in flat_refs if isinstance(r, dict) and "url" in r]
+
+        desc_values = find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])
+        cwe_values = find_by_path(cve_object, ["containers", "cna", "problemTypes", "0", "descriptions", "0", "cweId"])
+        if not cwe_values:
+            cwe_values = find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])
+
+        v = {
+            "package": comp.get("name"),
+            "installed_version": extract_version_from_purl(purl),
+            "purl": purl,
+            "cve": vuln.get("cve_id"),
+            "severity": base_severity,
+            "score": base_score,
+            "description": (desc_values[0] if desc_values else "") or "",
+            "affected_version": find_affected_version(cve_object),
+            "CWE": (cwe_values[0] if cwe_values else None),
+            "references": urls
+        }
+        out.append(v)
+    return out
+
+
+def count_sbom_components(bom_file: str) -> int:
+    """Quick count of components with purl for progress/estimate."""
+    if not os.path.exists(bom_file):
+        return 0
+    try:
+        data = json_load(bom_file)
+        return sum(1 for c in data.get("components", []) if c.get("purl"))
+    except Exception:
+        return 0
+
+
 def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
-    print("Scanning")
     if not os.path.exists(bom_file):
         raise FileNotFoundError(f"No BOM found at {bom_file}")
 
     sbom_data = json_load(bom_file)
-    components = sbom_data.get("components", [])
+    components = [c for c in sbom_data.get("components", []) if c.get("purl")]
+    logger.info("Starting SBOM scan: %d components with purl", len(components))
+
+    # ProcessPoolExecutor: каждый процесс — своё SQLite-подключение к vdb (нет ThreadingViolation)
     all_vulns = []
-
-    # Определяем тип проекта
-
-
-    for comp in components:
-        purl = comp.get("purl")
-        if not purl:
-            continue
-
-        results = search_by_any(purl, with_data=True)
-        if not results:
-            results = search_by_purl_like(purl, with_data=True)
-
-        for vuln in results:
-            # debug_file = "vuln_raw_dump.json"
-            # with open(debug_file, "w", encoding="utf-8") as f:
-            #     json.dump(vuln, f, indent=2, default=str)
-            # return []
-            cve_object = serialize_source_data(vuln.get("source_data"))
-
-            final_data ={
-
-            }
-            base_score, base_severity = extract_metrics(cve_object)
-            refs_raw = find_by_path(cve_object, ["containers", "cna", "references"])
-            flat_refs = list(chain.from_iterable(r for r in refs_raw if isinstance(r, list)))
-            urls = [str(r.get("url")) for r in flat_refs if isinstance(r, dict) and "url" in r]
-
-            try:
-                v = {
-                    "package": comp.get("name"),
-                    "installed_version": extract_version_from_purl(purl),
-                    "purl": purl,
-                    "cve": vuln.get("cve_id"),
-                    "severity": base_severity,
-                    "score": base_score,
-                    "description": find_by_path(cve_object, ["containers", "cna", "descriptions", "0", "value"])[0],
-                    "affected_version": find_affected_version(cve_object),
-                    "CWE": find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"])[0],
-                    "references": urls
-                }
-            except Exception as e:
-                print(find_by_path(cve_object, ["containers", "0", "descriptions", "cweId"]), e)
-                continue
-            all_vulns.append(v)
+    with ProcessPoolExecutor(max_workers=MAX_SCAN_WORKERS) as executor:
+        futures = {executor.submit(_process_one_component, comp): comp for comp in components}
+        for future in as_completed(futures):
+            all_vulns.extend(future.result())
 
     seen = set()
     unique_vulns = []
-
     for v in all_vulns:
         key = (v["package"], v["cve"], v["affected_version"])
         if key not in seen:

@@ -290,4 +290,10 @@ pyrightconfig.json
 tests
 .idea
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
+
+# DepReach outputs and runtime
+reports/
+depreach_cache.db
+depreach.log
+data/
 /graphql_db/vulns.db

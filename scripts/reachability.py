@@ -1,68 +1,164 @@
 import ast
-import inspect
-import tempfile
-
-import requests
-import re
-from collections import defaultdict
-import importlib
-
+import logging
 import os
-import json
-
+import re
 import shutil
 import tarfile
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import requests
+from urllib.parse import urlparse
+
+MAX_DIFF_WORKERS = 6
+
+logger = logging.getLogger(__name__)
+
+LANG_FUNCTION_PATTERNS = {
+    '.py': re.compile(r'(?:async\s+)?def\s+(\w+)\s*\('),
+    '.js': re.compile(r'(?:(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>))'),
+    '.ts': re.compile(r'(?:(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>))'),
+    '.java': re.compile(r'(?:(?:public|private|protected|static|final|abstract|synchronized|native)\s+)+[\w$<>\[\]]+\s+(\w+)\s*\('),
+    '.go': re.compile(r'func\s+(?:\([^)]+\)\s+)?(\w+)\s*\('),
+    '.rb': re.compile(r'def\s+(?:self\.)?(\w+)'),
+    '.rs': re.compile(r'(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[<(]'),
+    '.php': re.compile(r'(?:public|private|protected|static)?\s*function\s+(\w+)\s*\('),
+}
+
+HUNK_HEADER_RE = re.compile(r'^@@[^@]+@@\s*(.*)')
+
 
 def extract_commit_links(references: list[str]) -> list[str]:
     return [ref for ref in references if "/commit/" in ref]
 
-def get_diff(url):
+
+def extract_repo_name(url: str) -> str | None:
+    parts = urlparse(url).path.strip('/').split('/')
+    if len(parts) >= 2:
+        return parts[1]
+    return None
+
+
+def get_diff(url: str) -> str | None:
     if not url.endswith('.diff'):
         url += '.diff'
-    response = requests.get(url)
-    return response.text
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch diff from %s: %s", url, e)
+        return None
 
-def extract_functions_from_diff(diff_text):
-    pattern = re.compile(r'def (\w+)\(')
-    return set(pattern.findall(diff_text))
 
-def check_reachability(vuln_references, component_usage, project_call_graph=None, purl: str = None, imports_data = "data"):
-    commit_links = extract_commit_links(vuln_references)
-    commit_links = set(commit_links)
+def _match_func_name(pattern, text: str) -> str | None:
+    m = pattern.search(text)
+    if m:
+        return next((g for g in m.groups() if g), None)
+    return None
+
+
+def extract_functions_from_diff(diff_text: str) -> set[str]:
+    """Parse unified diff, extracting function names from changed lines and hunk headers."""
+    changed_functions = set()
+    current_ext = None
+
+    for line in diff_text.splitlines():
+        if line.startswith('diff --git'):
+            m = re.search(r'b/(.+)$', line)
+            if m:
+                _, current_ext = os.path.splitext(m.group(1))
+            continue
+
+        if not current_ext:
+            continue
+
+        pattern = LANG_FUNCTION_PATTERNS.get(current_ext)
+        if not pattern:
+            continue
+
+        # Hunk header: extract the enclosing function of the changed block
+        if line.startswith('@@'):
+            m = HUNK_HEADER_RE.match(line)
+            if m:
+                name = _match_func_name(pattern, m.group(1).strip())
+                if name:
+                    changed_functions.add(name)
+            continue
+
+        if line.startswith('+++') or line.startswith('---'):
+            continue
+
+        # Only process actually changed lines (+ added, - removed)
+        if not (line.startswith('+') or line.startswith('-')):
+            continue
+
+        name = _match_func_name(pattern, line[1:])
+        if name:
+            changed_functions.add(name)
+
+    return changed_functions
+
+def check_reachability(vuln_references, component_usage, project_call_graph=None, purl: str = None, imports_data="data"):
+    commit_links = list(set(extract_commit_links(vuln_references)))
     reachability_report = {}
 
     if not commit_links:
-        return {
-            "is_reachable": "Unknown"
-        }
+        return {"is_reachable": "Unknown"}
 
     lib_call_graph = None
-    if purl:
+    if purl and purl.startswith("pkg:pypi/"):
         try:
-            #print(f"[info] Downloading source for {purl}")
             lib_dir = download_purl_source(purl, imports_data)
-            #print(f"[info] Building call graph for downloaded library: {lib_dir}")
             lib_call_graph = build_call_graph(lib_dir)
+        except ValueError:
+            pass  # unsupported purl or no sdist (e.g. wheel-only) — skip library graph
         except Exception as e:
-            pass
-            #print(f"[warn] Failed to download/build graph for {purl}: {e}")
+            logger.debug("Failed to download/build graph for %s: %s", purl, e)
+
+    # Загружаем все диффы параллельно
+    link_to_diff = {}
+    with ThreadPoolExecutor(max_workers=MAX_DIFF_WORKERS) as executor:
+        future_to_link = {executor.submit(get_diff, link): link for link in commit_links}
+        for future in as_completed(future_to_link):
+            link = future_to_link[future]
+            try:
+                link_to_diff[link] = future.result()
+            except Exception:
+                link_to_diff[link] = None
 
     for link in commit_links:
-        component_name = link.split("/")[4]  # имя репозитория из ссылки
-        diff_text = get_diff(link)
+        component_name = extract_repo_name(link)
+        if not component_name:
+            logger.warning("Could not extract repo name from %s", link)
+            reachability_report[link] = "Unknown"
+            continue
+
+        diff_text = link_to_diff.get(link)
+        if not diff_text:
+            reachability_report[link] = "Unknown"
+            continue
+
         changed_funcs = extract_functions_from_diff(diff_text)
+        if not changed_funcs:
+            reachability_report[link] = {
+                "changed_funcs": [],
+                "reachable_funcs": [],
+                "reachable_via_graph": [],
+                "reachable_via_library": [],
+                "is_reachable": False,
+            }
+            continue
 
         used_funcs = component_usage.get(component_name, set())
         direct_reach = changed_funcs & used_funcs
         graph_reach = set()
 
-        # Проверка достижимости по графу проекта
         if project_call_graph:
             for target in changed_funcs:
                 if is_func_reachable(used_funcs, target, project_call_graph):
                     graph_reach.add(target)
 
-        # Проверка достижимости внутри самой библиотеки (если есть lib_call_graph)
         lib_graph_reach = set()
         if lib_call_graph:
             for used_func in used_funcs:
@@ -75,7 +171,7 @@ def check_reachability(vuln_references, component_usage, project_call_graph=None
             "reachable_funcs": list(direct_reach),
             "reachable_via_graph": list(graph_reach),
             "reachable_via_library": list(lib_graph_reach),
-            "is_reachable": bool(direct_reach or graph_reach or lib_graph_reach)
+            "is_reachable": bool(direct_reach or graph_reach or lib_graph_reach),
         }
 
     return reachability_report
@@ -229,7 +325,7 @@ def build_call_graph(directory: str) -> dict[str, set[str]]:
                 #print(f"[!] Failed to parse {path}: {e}")
                 continue
 
-            func_defs = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+            func_defs = {node.name: node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
             for func_name, func_node in func_defs.items():
                 called = set()

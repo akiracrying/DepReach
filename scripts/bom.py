@@ -55,8 +55,6 @@ def get_pkg_list(xmlfile):
     return pkgs
 
 def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
-    print("Generating SBOM")
-
     abs_src = os.path.abspath(src_dir)
     abs_out = os.path.abspath(output_file)
 
@@ -85,7 +83,7 @@ def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
     ]
 
     try:
-        subprocess.run(docker_args, check=True)
+        subprocess.run(docker_args, check=True, stdin=subprocess.DEVNULL)
         print(f"SBOM saved: {abs_out}")
         return True
     except subprocess.CalledProcessError as e:

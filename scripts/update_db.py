@@ -3,27 +3,26 @@ import logging
 from vdb.lib import config, db6 as db_lib
 from vdb.lib.orasclient import download_image
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def update_vdb():
+
+def update_vdb(silent: bool = False):
     """
     Проверяет актуальность базы данных уязвимостей и обновляет её при необходимости.
+    silent: не выводить сообщения (для вывода через спиннер в CLI).
     """
     VDB_AGE_HOURS = 8  # Пороговое значение возраста базы в часах для обновления
 
     # if db_lib.needs_update(days=0, hours=VDB_AGE_HOURS, default_status=False):
     if db_lib.needs_update():
-
-        print("Updating Vulnerabilities Database...")
+        if not silent:
+            print("Updating Vulnerabilities Database...")
         try:
             if download_image(config.VDB_DATABASE_URL, config.DATA_DIR):
-                a = "Good"
-                #logging.info("База данных уязвимостей успешно обновлена.")
+                logger.info("Vulnerability database updated from %s", config.VDB_DATABASE_URL)
             else:
-                a = "Bad"
-                #logging.error("Не удалось обновить базу данных уязвимостей.")
+                logger.warning("Vulnerability database update reported failure")
         except Exception as e:
-            logging.error(f"Ошибка при обновлении базы данных: {e}")
+            logger.error("Ошибка при обновлении базы данных: %s", e)
     else:
-        a = "Good"
-        #logging.info("База данных уязвимостей актуальна.")
+        logger.info("Vulnerability database is up to date")

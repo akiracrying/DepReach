@@ -1,26 +1,67 @@
 
 import re
+import sys
 import argparse
 import os
 import time
+import threading
 import warnings
-import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scripts.bom import generate_sbom_with_cdxgen
 from scripts.detect_type import detect_project_type
 from scripts.reachability import check_reachability, extract_library_function_calls, build_call_graph
 from scripts.update_db import update_vdb
-from scripts.composition_analysis import check_vulnerabilities_from_sbom
+from scripts.composition_analysis import check_vulnerabilities_from_sbom, count_sbom_components
+from scripts.cache import init_cache, get_cached_reachability, cache_reachability
 
-from graphql_db.client import query_reachability_by_purl, add_vuln_to_graphql
-
-from colorama import Fore, Style
 from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.markup import escape
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+logging.basicConfig(
+    filename="depreach.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+console = Console()
+MAX_REACHABILITY_WORKERS = 6
+
+
+def _run_with_timed_status(msg_template: str, task_fn, spinner: str = "dots", done_msg: str = None):
+    """Runs task_fn in a thread and shows status with elapsed seconds on the right.
+    If done_msg is set, prints a permanent line when the task completes."""
+    result = [None]
+    exc = [None]
+
+    def run():
+        try:
+            result[0] = task_fn()
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=run)
+    t.start()
+    start = time.time()
+    with console.status("", spinner=spinner, spinner_style="dim") as status:
+        while t.is_alive():
+            elapsed = int(time.time() - start)
+            status.update(f"{msg_template} [dim]({elapsed}s)[/dim]")
+            time.sleep(0.5)
+        t.join()
+    elapsed = int(time.time() - start)
+    if done_msg:
+        console.print(f"[dim]{done_msg} in {elapsed}s[/dim]")
+    if exc[0]:
+        raise exc[0]
+    return result[0]
+
 
 def show_logo():
     logo_dep = r"""
@@ -40,8 +81,7 @@ ______ _____  ___  _____  _   _
 \_| \_\____/\_| |_/\____/\_| |_/
     """.rstrip()
 
-    print(Fore.BLUE + logo_dep + Fore.RED + logo_reach + Style.RESET_ALL)
-
+    console.print(logo_dep + "  " + logo_reach)
     return True
 
 
@@ -164,51 +204,122 @@ def dep_reach(args):
     output_file = args.output
     skip_update = args.skip_update
 
+    logger.info(
+        "DepReach run started: src_dir=%s, output=%s, skip_update=%s, cache=%s, jobs=%s",
+        src_dir,
+        output_file,
+        skip_update,
+        args.cache,
+        args.jobs,
+    )
+
     project_type = detect_project_type(src_dir)
     if not project_type:
         project_type = "universal"
 
-    # Имя sbom файла рядом с output, с именем {project_name}_sbom.json
-    project_name = os.path.basename(os.path.normpath(src_dir))
-    output_dir = os.path.dirname(output_file)
+    project_name = os.path.basename(os.path.abspath(os.path.normpath(src_dir)))
+    output_dir = os.path.join("reports", project_name)
+    report_filename = os.path.basename(output_file) or "report.json"
+    output_file = os.path.join(output_dir, report_filename)
     sbom_file = os.path.join(output_dir, f"{project_name}_sbom.json")
-
+    os.makedirs(output_dir, exist_ok=True)
 
     if show_logo():
-        print("\n")
+        console.print()
         if not skip_update:
-            update_vdb()
-        generate_sbom_with_cdxgen(src_dir, sbom_file)
-        vulns = check_vulnerabilities_from_sbom(src_dir, sbom_file)
+            _run_with_timed_status(
+                "[bold]Updating Vulnerabilities Database[/bold]",
+                lambda: update_vdb(silent=True),
+                done_msg="VDB updated",
+            )
+        logger.info("Generating SBOM with cdxgen for %s -> %s", src_dir, sbom_file)
+        _run_with_timed_status(
+            "[bold]Generating SBOM…[/bold]",
+            lambda: generate_sbom_with_cdxgen(src_dir, sbom_file),
+            done_msg="SBOM generated",
+        )
+        logger.info("SBOM generation finished, checking file %s", sbom_file)
+        if not os.path.exists(sbom_file):
+            print(
+                "[ERROR] SBOM was not generated. Docker is required for cdxgen.\n"
+                "  → Start Docker Desktop (or ensure Docker daemon is running),\n"
+                "  → then run this command again."
+            )
+            raise SystemExit(1)
+        logger.info("Starting vulnerability scan from SBOM %s", sbom_file)
+        n_comp = count_sbom_components(sbom_file)
+        est_lo = max(1, n_comp // 150)
+        est_hi = max(2, n_comp // 60)
+        est_str = f"~{est_lo}-{est_hi} min" if n_comp > 100 else ""
+        scan_msg = f"[bold green]Scanning {n_comp:,} components…[/bold green]" + (f" [dim](est. {est_str})[/dim]" if est_str else "")
+        vulns = _run_with_timed_status(
+            scan_msg,
+            lambda: check_vulnerabilities_from_sbom(src_dir, sbom_file),
+            spinner="line",
+            done_msg="Scanning completed",
+        )
+
+        use_cache = args.cache
+
+        if use_cache:
+            init_cache()
 
         if vulns:
             project_functions = extract_library_function_calls(src_dir)
             call_graph = build_call_graph(src_dir)
-            GRAPHQL_USE = None
+            logger.info(
+                "Vulnerabilities found: %d, project functions: %d, call graph nodes: %d",
+                len(vulns),
+                len(project_functions),
+                len(call_graph),
+            )
 
-            for vuln in vulns:
-                if GRAPHQL_USE:
-                    cached = asyncio.run(query_reachability_by_purl(vuln["purl"]))
-
-                    match = next(
-                        (entry for entry in cached if entry["cve"] == vuln["cve"]),
-                        None
-                    )
-
-                    if match:
-                        vuln["reachability"] = match["reachability"]
-                        print(f"[cache] Used GraphQL cache for {vuln['purl']} (CVE: {vuln['cve']})")
+            to_analyze = []
+            cached_count = 0
+            for idx, vuln in enumerate(vulns):
+                if use_cache:
+                    cached = get_cached_reachability(vuln["purl"], vuln["cve"])
+                    if cached:
+                        vuln["reachability"] = cached
+                        cached_count += 1
+                        print(f"[cache] Using cached result for {vuln['purl']} (CVE: {vuln['cve']})")
                         continue
+                to_analyze.append((idx, vuln))
 
-                report = check_reachability(vuln["references"], project_functions, call_graph)
-                vuln["reachability"] = report
+            logger.info(
+                "Reachability phase: total=%d, cached=%d, to_analyze=%d",
+                len(vulns),
+                cached_count,
+                len(to_analyze),
+            )
 
-                if GRAPHQL_USE:
-                    asyncio.run(add_vuln_to_graphql(vuln))
+            if to_analyze:
+                def analyze_one(idx_vuln):
+                    idx, vuln = idx_vuln
+                    report = check_reachability(
+                        vuln["references"], project_functions, call_graph,
+                        purl=vuln["purl"],
+                    )
+                    return idx, report
+
+                reach_start = time.time()
+                with console.status("", spinner="line") as status:
+                    done = 0
+                    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+                        futures = {executor.submit(analyze_one, item): item for item in to_analyze}
+                        for future in as_completed(futures):
+                            idx, report = future.result()
+                            vulns[idx]["reachability"] = report
+                            if use_cache:
+                                cache_reachability(vulns[idx]["purl"], vulns[idx]["cve"], report)
+                            done += 1
+                            elapsed = int(time.time() - reach_start)
+                            status.update(f"[bold green]Analyzing reachability ({done}/{len(to_analyze)})…[/bold green] [dim]({elapsed}s)[/dim]")
+                reach_elapsed = int(time.time() - reach_start)
+                console.print(f"[dim]Reachability analysis completed in {reach_elapsed}s[/dim]")
 
         print_vulns(vulns)
 
-        os.makedirs(output_dir, exist_ok=True)
         with open(output_file, "w", encoding="utf-8") as f:
             import json
             json.dump(vulns, f, indent=2, ensure_ascii=False)
@@ -218,18 +329,25 @@ if __name__ == "__main__":
     """
     SCA Scanner with reachability analysis
     """
+    # Redirect stdin to prevent child processes (Docker, VDB, etc.) from blocking on Enter
+    if sys.stdin.isatty():
+        fd = os.open(os.devnull, os.O_RDONLY)
+        os.dup2(fd, 0)
+        os.close(fd)
+
     parser = argparse.ArgumentParser(description="DepReach — Next Gen SCA analyzer")
     parser.add_argument("--input", "-i", required=True, help="Path to source code directory")
     parser.add_argument("--output", "-o", required=True, help="Path to output result file (JSON)")
     parser.add_argument("--skip-update", action="store_true", help="Skip updating the vulnerability database")
+    parser.add_argument("--cache", action="store_true", help="Cache reachability results in local SQLite")
+    parser.add_argument("--jobs", "-j", type=int, default=MAX_REACHABILITY_WORKERS, help="Parallel jobs for reachability analysis (default: %(default)s)")
 
     args = parser.parse_args()
 
 
-    start_time = time.time()  # начало отсчета времени
+    start_time = time.time()
 
     dep_reach(args)
 
-    end_time = time.time()  # окончание
-    elapsed = end_time - start_time
-    print(f"[INFO] dep_reach completed in {elapsed:.2f} seconds")
+    elapsed = time.time() - start_time
+    console.print(f"[bold]Finished in {elapsed:.1f}s[/bold]")

@@ -2,7 +2,6 @@ import json
 import os
 import warnings
 import logging
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from custom_json_diff.lib.utils import json_load
 from vdb.lib.search import search_by_any, search_by_purl_like
@@ -212,12 +211,10 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
     components = [c for c in sbom_data.get("components", []) if c.get("purl")]
     logger.info("Starting SBOM scan: %d components with purl", len(components))
 
-    # ProcessPoolExecutor: каждый процесс — своё SQLite-подключение к vdb (нет ThreadingViolation)
+    # Sequential: vdb/APSW не поддерживает ни многопроцессность (database locked), ни многопоточность (ThreadingViolation)
     all_vulns = []
-    with ProcessPoolExecutor(max_workers=MAX_SCAN_WORKERS) as executor:
-        futures = {executor.submit(_process_one_component, comp): comp for comp in components}
-        for future in as_completed(futures):
-            all_vulns.extend(future.result())
+    for comp in components:
+        all_vulns.extend(_process_one_component(comp))
 
     seen = set()
     unique_vulns = []

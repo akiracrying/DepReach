@@ -9,12 +9,13 @@ import warnings
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from scripts.bom import generate_sbom_with_cdxgen
+from scripts.bom import generate_sbom_python
 from scripts.detect_type import detect_project_type
 from scripts.reachability import check_reachability, extract_library_function_calls, build_call_graph
 from scripts.update_db import update_vdb
 from scripts.composition_analysis import check_vulnerabilities_from_sbom, count_sbom_components
 from scripts.cache import init_cache, get_cached_reachability, cache_reachability
+from scripts.html_report import generate_html_report
 
 from rich.console import Console
 from rich.table import Table
@@ -213,9 +214,15 @@ def dep_reach(args):
         args.jobs,
     )
 
-    project_type = detect_project_type(src_dir)
-    if not project_type:
-        project_type = "universal"
+    project_types = detect_project_type(src_dir)
+    if not project_types:
+        project_types = ["universal"]
+    if "python" not in project_types:
+        console.print(
+            "[red]Docker/cdxgen is temporarily disabled.[/red] Only Python projects are supported for testing.\n"
+            "  → Use a directory with requirements.txt, pyproject.toml, poetry.lock, or Pipfile."
+        )
+        raise SystemExit(1)
 
     project_name = os.path.basename(os.path.abspath(os.path.normpath(src_dir)))
     output_dir = os.path.join("reports", project_name)
@@ -232,18 +239,16 @@ def dep_reach(args):
                 lambda: update_vdb(silent=True),
                 done_msg="VDB updated",
             )
-        logger.info("Generating SBOM with cdxgen for %s -> %s", src_dir, sbom_file)
+        logger.info("Generating SBOM (Python) for %s -> %s", src_dir, sbom_file)
         _run_with_timed_status(
             "[bold]Generating SBOM…[/bold]",
-            lambda: generate_sbom_with_cdxgen(src_dir, sbom_file),
+            lambda: generate_sbom_python(src_dir, sbom_file),
             done_msg="SBOM generated",
         )
         logger.info("SBOM generation finished, checking file %s", sbom_file)
         if not os.path.exists(sbom_file):
-            print(
-                "[ERROR] SBOM was not generated. Docker is required for cdxgen.\n"
-                "  → Start Docker Desktop (or ensure Docker daemon is running),\n"
-                "  → then run this command again."
+            console.print(
+                "[red]SBOM was not generated.[/red] Check that the project has requirements.txt, poetry.lock, or Pipfile."
             )
             raise SystemExit(1)
         logger.info("Starting vulnerability scan from SBOM %s", sbom_file)
@@ -323,6 +328,14 @@ def dep_reach(args):
         with open(output_file, "w", encoding="utf-8") as f:
             import json
             json.dump(vulns, f, indent=2, ensure_ascii=False)
+
+        # HTML report next to JSON report
+        html_report_file = os.path.join(output_dir, "report.html")
+        try:
+            generate_html_report(project_name, sbom_file, output_file, html_report_file)
+            console.print(f"[dim]HTML report saved to {html_report_file}[/dim]")
+        except Exception as e:
+            logger.exception("Failed to generate HTML report: %s", e)
 
 
 if __name__ == "__main__":

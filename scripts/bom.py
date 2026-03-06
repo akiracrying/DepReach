@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from urllib.parse import unquote_plus
 
 from defusedxml.ElementTree import parse
@@ -53,6 +54,47 @@ def get_pkg_list(xmlfile):
                     licenses = get_licenses(ele)
                     pkgs.append(get_package(ele, licenses))
     return pkgs
+
+def _choose_python_provider(src_dir):
+    """Choose cyclonedx_py provider: poetry, pipenv, or requirements. Returns (cmd, args)."""
+    abs_src = os.path.abspath(src_dir)
+    if os.path.isfile(os.path.join(abs_src, "poetry.lock")):
+        return "poetry", [abs_src]
+    if os.path.isfile(os.path.join(abs_src, "Pipfile")):
+        return "pipenv", [abs_src]
+    req_files = [
+        os.path.join(abs_src, "requirements.txt"),
+        os.path.join(abs_src, "requirements", "requirements.txt"),
+    ]
+    for p in req_files:
+        if os.path.isfile(p):
+            return "requirements", [p]
+    return "requirements", [os.path.join(abs_src, "requirements.txt")]
+
+
+def generate_sbom_python(src_dir=".", output_file="sbom.json"):
+    """Generate SBOM using cyclonedx-py (cyclonedx-bom) — no Docker. Python projects only."""
+    abs_src = os.path.abspath(src_dir)
+    abs_out = os.path.abspath(output_file)
+
+    if os.path.exists(abs_out):
+        try:
+            os.remove(abs_out)
+        except OSError:
+            pass
+
+    provider, provider_args = _choose_python_provider(src_dir)
+    cmd = [sys.executable, "-m", "cyclonedx_py", provider] + provider_args + [
+        "--outfile", abs_out,
+        "--output-format", "JSON",
+        "--schema-version", "1.5",
+    ]
+    try:
+        subprocess.run(cmd, cwd=abs_src, check=True, stdin=subprocess.DEVNULL)
+        return os.path.exists(abs_out)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
 
 def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
     abs_src = os.path.abspath(src_dir)

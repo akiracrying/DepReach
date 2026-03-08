@@ -160,11 +160,11 @@ def print_vulns(vulns: list[dict]):
                         if info != "Unknown":
                             try:
                                 mark = "[green]✅[/green]" if info.get("is_reachable") else "[red]❌[/red]"
-                            except Exception as e:
-                                status = reach.get("isReachable")
-                                if status == "True":
+                            except Exception:
+                                status = reach.get("is_reachable")
+                                if status is True:
                                     mark = "[green]✅[/green]"
-                                elif status == "False":
+                                elif status is False:
                                     mark = "[red]❌[/red]"
                                 else:
                                     mark = "Unknown"

@@ -1,24 +1,43 @@
-# DepReach: Software Composition Analysis with Reachability
+<p align="center">
+  <strong>DepReach</strong>
+</p>
+<p align="center">
+  <em>SCA with reachability — find out if vulnerable code is actually reachable.</em>
+</p>
 
-**DepReach** is a Software Composition Analysis (SCA) tool that extends vulnerability scanning with **reachability analysis** — determining whether vulnerable code is actually reachable from your project via call graphs.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/CycloneDX-SBOM-orange" alt="CycloneDX SBOM">
+  <img src="https://img.shields.io/badge/Docker-optional-2496ED?logo=docker&logoColor=white" alt="Docker optional">
+  <img src="https://img.shields.io/badge/SCA-reachability-green" alt="SCA reachability">
+</p>
+
+## What is DepReach?
+
+**DepReach** is a [Software Composition Analysis](https://owasp.org/www-project-software-composition-analysis/) (SCA) tool that goes beyond listing CVEs: it tells you whether vulnerable code is **reachable** from your project. It builds call graphs, maps fixes from GitHub diffs to affected functions, and marks issues as reachable or not — so you can prioritize what actually matters.
+
+## Preview
+
+![Report](docs/report-preview.png)
 
 ## Features
 
-- **SBOM generation** — CycloneDX format via cdxgen (Docker)
-- **Vulnerability lookup** — Local vulnerability database (VDB)
-- **Reachability analysis** for Python packages:
-  - Call graph construction
-  - AST-based analysis
-  - GitHub diff integration to map fixes to affected functions
-- **Caching** — SQLite cache for reachability results
+| Feature | Description |
+|--------|-------------|
+| **SBOM** | CycloneDX via cyclonedx-py (Python) or cdxgen (Docker) |
+| **Vulnerability lookup** | Local VDB (e.g. appthreat-vulnerability-db) |
+| **Reachability** | Call graph + AST + GitHub diff → which vuln code is reachable |
+| **Caching** | SQLite cache for reachability results |
+| **HTML report** | Interactive dependency graph, filter by package, zoom, “hide clean” |
 
 ## Requirements
 
-- Python 3.10+
-- **Docker** — Required for SBOM generation (cdxgen)
-- Git — For reachability analysis (GitHub diffs)
+- **Python** 3.10+
+- **Docker** (optional) — only if using cdxgen for SBOM
+- **Git** — for reachability (GitHub diffs)
 
-## Installation
+## Quick start
 
 ```bash
 git clone https://github.com/your-org/DepReach.git
@@ -27,44 +46,39 @@ python -m venv .venv
 .venv\Scripts\activate   # Windows
 # source .venv/bin/activate  # Linux/macOS
 pip install -r requirements.txt
+
+python depreach.py -i path/to/your/project -o report.json --cache
 ```
+
+Reports are written to `reports/<project_name>/` (JSON, SBOM, and HTML)
 
 ## Usage
 
 ```bash
-python depreach.py -i path/to/project -o report.json
+python depreach.py -i <input_dir> -o report.json [options]
 ```
-
-### Options
 
 | Option | Description |
 |--------|-------------|
-| `-i`, `--input` | Path to source code directory (required) |
-| `-o`, `--output` | Report filename (e.g. `report.json`). Saved under `reports/{project_name}/` |
-| `--skip-update` | Skip updating the vulnerability database |
-| `--cache` | Cache reachability results in local SQLite |
-| `-j`, `--jobs` | Parallel jobs for reachability analysis (default: 6) |
+| `-i`, `--input` | Source code directory (required) |
+| `-o`, `--output` | Report filename; output dir is `reports/<project_name>/` |
+| `--skip-update` | Skip VDB update |
+| `--cache` | Cache reachability in SQLite |
+| `-j`, `--jobs` | Parallel jobs for reachability (default: 6) |
 
-### Example
+**Example**
 
 ```bash
-python depreach.py -i ./my-project -o report.json --cache
+python depreach.py -i ./my-app -o report.json --cache
 ```
 
 ## Output
 
-- **JSON report** — `reports/{project_name}/report.json` — vulnerability list with CVE, severity, description, references, and reachability
-- **SBOM** — `reports/{project_name}/{project_name}_sbom.json`
-- **Console table** — Rich-formatted summary with reachability status (✅/❌)
-- **Log** — `depreach.log` for debugging
+| Artifact | Path | Description |
+|----------|------|-------------|
+| JSON report | `reports/<name>/report.json` | Vulns with CVE, severity, description, references, reachability |
+| SBOM | `reports/<name>/<name>_sbom.json` | CycloneDX SBOM |
+| HTML report | `reports/<name>/report.html` | Interactive graph, filter by package, zoom |
+| Console | — | Rich table with reachability status |
+| Log | `depreach.log` | Debug log |
 
-## Architecture
-
-| Component | Purpose |
-|-----------|---------|
-| `depreach.py` | Main entry point, CLI, workflow orchestration |
-| `scripts/bom.py` | SBOM generation via cdxgen Docker image |
-| `scripts/composition_analysis.py` | Vulnerability scanning against VDB |
-| `scripts/reachability.py` | Call graph, AST, GitHub diff analysis |
-| `scripts/update_db.py` | VDB update |
-| `scripts/cache.py` | Reachability result caching |

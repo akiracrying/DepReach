@@ -11,7 +11,6 @@
   - AST-based analysis
   - GitHub diff integration to map fixes to affected functions
 - **Caching** — SQLite cache for reachability results
-- **Optional GraphQL API** — Query vulnerability data via FastAPI + Strawberry
 
 ## Requirements
 
@@ -69,32 +68,3 @@ python depreach.py -i ./my-project -o report.json --cache
 | `scripts/reachability.py` | Call graph, AST, GitHub diff analysis |
 | `scripts/update_db.py` | VDB update |
 | `scripts/cache.py` | Reachability result caching |
-| `graphql_db/` | Optional FastAPI + Strawberry GraphQL API |
-
-## Optional: GraphQL API
-
-To query vulnerability data via GraphQL, start the server from the `graphql_db` directory:
-
-```bash
-cd graphql_db
-uvicorn server:app --reload --port 5555
-```
-
-Example query:
-
-```graphql
-query {
-  getVulnsByPurl(purl: "pkg:pypi/requests@2.25.1") {
-    cve
-    description
-    severity
-    reachability {
-      isReachable
-      changedFuncs
-      reachableFuncs
-    }
-  }
-}
-```
-
-Note: The main `depreach.py` flow writes to a JSON file. The GraphQL server reads from `vulns.db` — integration between the two is optional and can be wired separately.

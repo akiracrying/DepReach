@@ -296,4 +296,3 @@ reports/
 depreach_cache.db
 depreach.log
 data/
-/graphql_db/vulns.db

@@ -24,7 +24,6 @@ def serialize_source_data(source_data):
         return {}
 
 def extract_severity(vuln):
-    # Пытаемся достать severity из source_data
     if hasattr(vuln.get("source_data", {}), "containers"):
         for container in vuln["source_data"].containers or []:
             for rating in getattr(container, "ratings", []):
@@ -38,9 +37,7 @@ def extract_version_from_purl(purl: str) -> str | None:
     return None
 
 def extract_metrics(cve_object):
-    """
-    Извлекает метрики (baseScore и baseSeverity) из наиболее высокой CVSS версии в metrics.
-    """
+    """Get baseScore and baseSeverity from highest CVSS in metrics."""
     metrics = find_by_path(cve_object, ["containers", "cna", "metrics", "0"])
     if not metrics:
         return None, None
@@ -61,14 +58,12 @@ def extract_metrics(cve_object):
     best_version = max(cvss_data.keys())
     best_metrics = cvss_data[best_version]
 
-    # baseScore может быть float или объектом с value
     base_score = best_metrics.get("baseScore")
     if isinstance(base_score, dict):
         base_score = base_score.get("value") or base_score.get("name")
     elif hasattr(base_score, "value"):
         base_score = getattr(base_score, "value", None)
 
-    # baseSeverity аналогично
     base_severity = best_metrics.get("baseSeverity")
     if isinstance(base_severity, dict):
         base_severity = base_severity.get("value") or base_severity.get("name")
@@ -78,10 +73,7 @@ def extract_metrics(cve_object):
     return base_score, base_severity
 
 def find_by_path(obj, path):
-    """
-    Рекурсивно ищет значения по частичному пути, поддерживая индексы и ключи.
-    Если path = ["problemTypes", "0", "descriptions", "0", "cweId"], то найдёт даже если путь не полный.
-    """
+    """Find values by partial path (dict keys and list indices)."""
     def search(obj, path, current=[]):
         results = []
         if not path:
@@ -114,16 +106,12 @@ def find_by_path(obj, path):
     return search(obj, path)
 
 def find_affected_version(cve_object: dict) -> str | None:
-    """
-    Использует find_by_path, чтобы достать lessThan или lessThanOrEqual из cve_object
-    """
-    # Получаем список всех версий
+    """Get lessThan or lessThanOrEqual from cve_object via find_by_path."""
     versions = find_by_path(cve_object, ["containers", "cna", "affected", "0", "versions", "0"])
     if not versions:
         return None
 
     for version_entry in versions:
-        # Сначала пытаемся взять lessThan, если нет — lessThanOrEqual
         if version := version_entry.get("lessThan"):
             return "<" + version
         if version := version_entry.get("lessThanOrEqual"):
@@ -132,7 +120,6 @@ def find_affected_version(cve_object: dict) -> str | None:
     return None
 
 def extract_description(vuln):
-    # Пытаемся достать описание из source_data
     desc = vuln.get("description")
     if desc:
         return desc
@@ -154,7 +141,7 @@ def extract_fixed_version(vuln):
     return vuln.get("fixed_location")
 
 def _process_one_component(comp: Dict) -> List[Dict]:
-    """Обрабатывает один компонент SBOM, возвращает список записей об уязвимостях."""
+    """Process one SBOM component, return list of vuln records."""
     purl = comp.get("purl")
     if not purl:
         return []
@@ -211,7 +198,7 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
     components = [c for c in sbom_data.get("components", []) if c.get("purl")]
     logger.info("Starting SBOM scan: %d components with purl", len(components))
 
-    # Sequential: vdb/APSW не поддерживает ни многопроцессность (database locked), ни многопоточность (ThreadingViolation)
+    # vdb/APSW: no multiprocessing or threading (database locked)
     all_vulns = []
     for comp in components:
         all_vulns.extend(_process_one_component(comp))

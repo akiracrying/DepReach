@@ -7,13 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 def update_vdb(silent: bool = False):
-    """
-    Проверяет актуальность базы данных уязвимостей и обновляет её при необходимости.
-    silent: не выводить сообщения (для вывода через спиннер в CLI).
-    """
-    VDB_AGE_HOURS = 8  # Пороговое значение возраста базы в часах для обновления
+    """Check VDB freshness and update if needed. silent: no print (for CLI spinner)."""
+    VDB_AGE_HOURS = 8
 
-    # if db_lib.needs_update(days=0, hours=VDB_AGE_HOURS, default_status=False):
     if db_lib.needs_update():
         if not silent:
             print("Updating Vulnerabilities Database...")
@@ -23,6 +19,6 @@ def update_vdb(silent: bool = False):
             else:
                 logger.warning("Vulnerability database update reported failure")
         except Exception as e:
-            logger.error("Ошибка при обновлении базы данных: %s", e)
+            logger.error("VDB update failed: %s", e)
     else:
         logger.info("Vulnerability database is up to date")

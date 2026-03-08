@@ -112,11 +112,10 @@ def check_reachability(vuln_references, component_usage, project_call_graph=None
             lib_dir = download_purl_source(purl, imports_data)
             lib_call_graph = build_call_graph(lib_dir)
         except ValueError:
-            pass  # unsupported purl or no sdist (e.g. wheel-only) — skip library graph
+            pass  # unsupported purl or no sdist, skip library graph
         except Exception as e:
             logger.debug("Failed to download/build graph for %s: %s", purl, e)
 
-    # Загружаем все диффы параллельно
     link_to_diff = {}
     with ThreadPoolExecutor(max_workers=MAX_DIFF_WORKERS) as executor:
         future_to_link = {executor.submit(get_diff, link): link for link in commit_links}
@@ -179,9 +178,8 @@ def check_reachability(vuln_references, component_usage, project_call_graph=None
 def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
     result = {}
     imports = {}
-    module_imports = {}  # Сопоставление коротких имен с полными именами модулей
+    module_imports = {}
 
-    # Сначала собираем все импорты
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith('.py'):
@@ -197,7 +195,7 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                                     module_imports[short_name] = full_name
                             elif isinstance(node, ast.ImportFrom):
                                 module = node.module
-                                level = node.level  # Для относительных импортов
+                                level = node.level
                                 for alias in node.names:
                                     full_name = f"{module}.{alias.name}" if level == 0 else f"{'.' * level}{module}.{alias.name}"
                                     short_name = alias.asname or alias.name
@@ -205,7 +203,6 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                     except Exception as e:
                         print(f"Error parsing imports in {path}: {e}")
 
-    # Затем собираем вызовы функций и группируем по модулям
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith('.py'):
@@ -219,11 +216,9 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                                 func_name = None
 
                                 if isinstance(node.func, ast.Attribute):
-                                    # Обработка методов и атрибутов: obj.method()
                                     base = ast.unparse(node.func.value)
                                     base_parts = base.split('.')
 
-                                    # Ищем корневой модуль в цепочке атрибутов
                                     for part in base_parts:
                                         if part in module_imports:
                                             module_name = module_imports[part].split('.')[0]
@@ -233,7 +228,6 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                                         func_name = node.func.attr
 
                                 elif isinstance(node.func, ast.Name):
-                                    # Обработка простых вызовов: func()
                                     if node.func.id in module_imports:
                                         module_name = module_imports[node.func.id].split('.')[0]
                                         func_name = node.func.id
@@ -248,11 +242,7 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
     return result
 
 def download_purl_source(purl: str, target_dir: str) -> str:
-    """
-    Скачивает исходники библиотеки по PURL (только PyPI).
-    Пример purl: "pkg:pypi/requests@2.31.0"
-    Возвращает путь к распакованной папке с кодом.
-    """
+    """Download library source by PURL (PyPI only). Return path to unpacked dir."""
     match = re.match(r"pkg:pypi/([^@]+)@([^@]+)", purl)
     if not match:
         raise ValueError(f"Invalid PURL format: {purl}")
@@ -299,17 +289,13 @@ def download_purl_source(purl: str, target_dir: str) -> str:
 
         safe_extract(tar, extract_path)
 
-    # Путь к директории внутри архива (обычно requests-2.31.0/)
     inner_dirs = os.listdir(extract_path)
     if len(inner_dirs) == 1:
         return os.path.join(extract_path, inner_dirs[0])
     return extract_path
 
 def build_call_graph(directory: str) -> dict[str, set[str]]:
-    """
-    Строит граф вызовов между функциями внутри проекта.
-    Ключ — имя функции, значение — множество функций, которые она вызывает.
-    """
+    """Build call graph: func name -> set of called func names."""
     call_graph = {}
 
     for root, _, files in os.walk(directory):
@@ -340,9 +326,7 @@ def build_call_graph(directory: str) -> dict[str, set[str]]:
     return call_graph
 
 def is_func_reachable(start_funcs: set[str], target_func: str, call_graph: dict[str, set[str]]) -> bool:
-    """
-    Проверяет, достижима ли уязвимая функция target_func из любой функции в start_funcs.
-    """
+    """Whether target_func is reachable from any of start_funcs in call_graph."""
     visited = set()
     stack = list(start_funcs)
 

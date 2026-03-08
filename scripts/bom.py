@@ -100,7 +100,6 @@ def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
     abs_src = os.path.abspath(src_dir)
     abs_out = os.path.abspath(output_file)
 
-    # Папка, в которую сохраняем результат
     out_dir = os.path.dirname(abs_out)
     out_filename = os.path.basename(abs_out)
 
@@ -112,16 +111,13 @@ def generate_sbom_with_cdxgen(src_dir=".", output_file="sbom.json"):
             print(f"Error removing file")
             exit(1)
 
-    # Монтируем две папки в контейнер
-    # src_dir -> /src
-    # out_dir -> /out
     docker_args = [
         "docker", "run", "--rm",
         "-v", f"{abs_src}:/src",
         "-v", f"{out_dir}:/out",
         "ghcr.io/cyclonedx/cdxgen",
-        "/src",                  #  путь к исходникам внутри контейнера
-        "-o", f"/out/{out_filename}"  #  путь до выходного файла
+        "/src",
+        "-o", f"/out/{out_filename}"
     ]
 
     try:

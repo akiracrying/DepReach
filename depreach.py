@@ -90,13 +90,12 @@ def format_description(desc: str, link: str = None) -> str:
     if not desc:
         return ""
 
-    # Превращаем \n, \t и т.д. в реальные символы
     try:
         desc = desc.encode().decode(r"unicode_escape")
     except Exception:
-        pass  # если вдруг строка уже норм
+        pass
 
-    # Удаляем markdown мусор
+    # strip markdown
     clean = re.sub(r'`+', '', desc)
     clean = re.sub(r'\*+', '', clean)
     clean = re.sub(r'#+\s*', '', clean)
@@ -104,13 +103,8 @@ def format_description(desc: str, link: str = None) -> str:
     clean = re.sub(r'\n{2,}', '\n', clean)
     clean = clean.strip()
 
-    # Берем первую строку до первого \n
     first_line = clean.split('\n')[0].strip()
-
-    # Экранируем Rich-разметку
     first_line = escape(first_line)
-
-    # Добавляем "читать далее" с ссылкой или без
     if link:
         return f"{first_line}"
     else:
@@ -136,7 +130,7 @@ def print_vulns(vulns: list[dict]):
         ("affected_version", "Affected version", None, True),
         ("CWE", "CWE", None, True),
         ("references", "References", None, False),
-        ("reachable", "Reachable?", 10, True),  # ⬅️ новая колонка
+        ("reachable", "Reachable?", 10, True),
     ]
 
     for key, header, width, nowrap in columns:
@@ -168,7 +162,7 @@ def print_vulns(vulns: list[dict]):
             elif key == "reachable":
                 reach = vuln.get("reachability", {})
                 if not reach:
-                    val = "[dim]—[/dim]"  # если вообще нет данных
+                    val = "[dim]—[/dim]"
                 else:
                     lines = []
                     for i, (url, info) in enumerate(reach.items(), 1):
@@ -185,7 +179,6 @@ def print_vulns(vulns: list[dict]):
                                     mark = "Unknown"
                         else:
                             mark = "Unknown"
-                        #short_url = url.split("/")[-1][:16]  # Можно сделать короче
                         lines.append(f"{i}. {mark}")
                     val = "\n".join(lines)
 

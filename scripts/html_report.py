@@ -23,7 +23,7 @@ def _js_json(obj) -> str:
     Serialize Python object to JSON safe to embed into <script> tag.
     """
     s = json.dumps(obj, ensure_ascii=False)
-    # Prevent breaking out of the script tag
+    # escape for script tag
     return s.replace("</script>", "<\\/script>")
 
 
@@ -38,16 +38,16 @@ def _clean_description(desc: str, max_len: int = 200) -> str:
     if not desc:
         return ""
 
-    # In data the text often comes with literal "\n" sequences
+    # normalize literal \n in text
     desc = desc.replace("\\r\\n", " ").replace("\\n", " ").replace("\\t", " ")
 
-    # Remove markdown markers / headings / links
+    # strip markdown
     desc = re.sub(r"`+", "", desc)
     desc = re.sub(r"\*+", "", desc)
     desc = re.sub(r"#+\s*", "", desc)
     desc = re.sub(r"\[.*?\]\(.*?\)", "", desc)
 
-    # Collapse whitespace
+    # collapse whitespace
     desc = re.sub(r"\s+", " ", desc).strip()
 
     if len(desc) > max_len:
@@ -67,7 +67,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     with open(json_report_file, "r", encoding="utf-8") as f:
         vulns = json.load(f)
 
-    # Aggregate vulnerability stats per purl
+    # stats per purl
     per_purl = defaultdict(
         lambda: {
             "package": None,
@@ -111,7 +111,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             stats["reachableVulnCount"] += 1
             total_reachable += 1
 
-        # Collect per-purl vulnerability list for node details panel
+        # per-purl list for graph
         vulns_by_purl[purl].append(
             {
                 "package": v.get("package"),
@@ -129,7 +129,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     nodes = []
     root_id = "__root__"
 
-    # Root node represents the project itself
+    # root node
     nodes.append(
         {
             "id": root_id,
@@ -178,11 +178,10 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         )
         links.append({"source": root_id, "target": node_id})
 
-    # High-level summary
     total_components = len(components)
     total_vulns = len(vulns)
 
-    # Prepare data for client-side JS
+    # for client JS
     graph_data = {"nodes": nodes, "links": links}
 
     html = f"""<!DOCTYPE html>
@@ -210,7 +209,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     }}
     body {{
       margin: 0;
-      padding: 16px;
+      padding: 12px 16px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: radial-gradient(circle at top, #0d1117 0, #020409 55%, #000 100%);
       color: var(--text);
@@ -224,7 +223,6 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     }}
     h2 {{
       font-size: 18px;
-      margin-top: 24px;
     }}
     p {{
       margin: 0 0 8px;
@@ -245,7 +243,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       display: flex;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 16px;
+      margin-bottom: 6px;
       align-items: center;
     }}
     .badge {{
@@ -277,12 +275,12 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       background: radial-gradient(circle at top left, #161b22 0, #0d1117 45%, #05060a 100%);
       border-radius: 16px;
       border: 1px solid rgba(240,246,252,0.08);
-      padding: 16px;
+      padding: 12px 16px;
       box-shadow: 0 18px 45px rgba(0,0,0,0.6);
       margin-bottom: 16px;
     }}
     .card--compact {{
-      padding: 12px 16px;
+      padding: 10px 16px;
     }}
     .summary-grid {{
       display: grid;
@@ -521,7 +519,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     .reach-unknown {{ border-color: rgba(139,148,158,0.8); color: var(--text-muted); }}
 
     .table-wrapper {{
-      max-height: 520px;
+      max-height: 1000px;
       overflow: auto;
       border-radius: 12px;
       border: 1px solid rgba(48,54,61,0.8);
@@ -607,7 +605,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
           <tbody>
 """
 
-    # Sort vulnerabilities: reachable first, then severity, then score desc
+    # sort: reachable first, then severity/score
     def _vuln_sort_key(v):
         reach = v.get("reachability") or {}
         reachable = False
@@ -639,13 +637,13 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         refs = v.get("references") or []
         reach = v.get("reachability") or {}
 
-        # Description: compact summary + full version (both cleaned from markdown/\n)
+        # short + full desc
         short_desc = _clean_description(desc, max_len=220)
         full_desc = _clean_description(desc, max_len=4096)
         short_desc_html = html_lib.escape(short_desc)
         full_desc_html = html_lib.escape(full_desc)
 
-        # Reachability summary
+        # reachability
         reach_status = "unknown"
         if isinstance(reach, dict) and reach:
             any_yes = any(isinstance(info, dict) and info.get("is_reachable") for info in reach.values())
@@ -717,7 +715,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     const graphData = """ + _js_json(graph_data) + """;
     const vulnsByPurl = """ + _js_json(vulns_by_purl) + """;
 
-    // Dependency bubble graph
+    // graph
     (function() {
       const svg = d3.select("#graph");
       const container = document.getElementById("graph-container");
@@ -872,7 +870,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       updateCleanVisibility();
     })();
 
-    // Expand/collapse description and references in table
+    // table toggles
     (function() {
       const table = document.getElementById("vuln-table");
       if (!table) return;
@@ -880,7 +878,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       table.addEventListener("click", function (event) {
         const target = event.target;
 
-        // Description toggle
+        // desc
         if (target.classList.contains("desc-toggle")) {
           const cell = target.closest(".col-desc");
           if (!cell) return;
@@ -901,7 +899,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
           return;
         }
 
-        // References toggle
+        // refs
         if (target.classList.contains("refs-toggle")) {
           const cell = target.closest(".col-refs");
           if (!cell) return;
@@ -921,7 +919,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       });
     })();
 
-    // Filter table by package name
+    // package filter
     (function() {
       let currentFilter = null;
       const filterBar = document.getElementById("table-filter-bar");

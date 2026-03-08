@@ -3,13 +3,11 @@ import os
 ignore_directories = []
 
 def is_binary_string(content):
-    """
-    Method to check if the given content is a binary string
-    """
-    textchars = bytearray(
-        {7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7F}
-    )
-    return bool(content.translate(None, textchars))
+    """Return True if content has bytes outside typical text range."""
+    textchars = {
+        7, 8, 9, 10, 12, 13, 27
+    } | set(range(0x20, 0x100)) - {0x7F}
+    return any(b not in textchars for b in content)
 
 
 def is_exe(src):

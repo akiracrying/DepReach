@@ -201,7 +201,7 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                                     short_name = alias.asname or alias.name
                                     module_imports[short_name] = full_name
                     except Exception as e:
-                        print(f"Error parsing imports in {path}: {e}")
+                        logger.debug("Error parsing imports in %s: %s", path, e)
 
     for root, _, files in os.walk(directory):
         for file in files:
@@ -237,7 +237,7 @@ def extract_library_function_calls(directory: str) -> dict[str, set[str]]:
                                         result[module_name] = set()
                                     result[module_name].add(func_name)
                     except Exception as e:
-                        print(f"Error parsing calls in {path}: {e}")
+                        logger.debug("Error parsing calls in %s: %s", path, e)
 
     return result
 

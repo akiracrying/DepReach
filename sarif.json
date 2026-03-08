@@ -1,0 +1,585 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "DepReach",
+          "informationUri": "https://github.com/DepReach/DepReach",
+          "rules": [
+            {
+              "id": "CVE-2026-27205",
+              "shortDescription": {
+                "text": "CVE-2026-27205"
+              },
+              "properties": {
+                "security-severity": "3.1"
+              }
+            },
+            {
+              "id": "CVE-2023-30861",
+              "shortDescription": {
+                "text": "CVE-2023-30861"
+              },
+              "properties": {
+                "security-severity": "8.7"
+              }
+            },
+            {
+              "id": "CVE-2019-1010083",
+              "shortDescription": {
+                "text": "CVE-2019-1010083"
+              },
+              "properties": {
+                "security-severity": "8.7"
+              }
+            },
+            {
+              "id": "CVE-2018-1000656",
+              "shortDescription": {
+                "text": "CVE-2018-1000656"
+              },
+              "properties": {
+                "security-severity": "8.7"
+              }
+            },
+            {
+              "id": "CVE-2020-1747",
+              "shortDescription": {
+                "text": "CVE-2020-1747"
+              },
+              "properties": {
+                "security-severity": "9.3"
+              }
+            },
+            {
+              "id": "CVE-2020-14343",
+              "shortDescription": {
+                "text": "CVE-2020-14343"
+              },
+              "properties": {
+                "security-severity": "9.3"
+              }
+            },
+            {
+              "id": "CVE-2024-47081",
+              "shortDescription": {
+                "text": "CVE-2024-47081"
+              },
+              "properties": {
+                "security-severity": "5.3"
+              }
+            },
+            {
+              "id": "CVE-2024-35195",
+              "shortDescription": {
+                "text": "CVE-2024-35195"
+              },
+              "properties": {
+                "security-severity": "5.6"
+              }
+            },
+            {
+              "id": "CVE-2026-21441",
+              "shortDescription": {
+                "text": "CVE-2026-21441"
+              },
+              "properties": {
+                "security-severity": "8.9"
+              }
+            },
+            {
+              "id": "CVE-2025-66471",
+              "shortDescription": {
+                "text": "CVE-2025-66471"
+              },
+              "properties": {
+                "security-severity": "8.9"
+              }
+            },
+            {
+              "id": "CVE-2025-66418",
+              "shortDescription": {
+                "text": "CVE-2025-66418"
+              },
+              "properties": {
+                "security-severity": "8.9"
+              }
+            },
+            {
+              "id": "CVE-2025-50181",
+              "shortDescription": {
+                "text": "CVE-2025-50181"
+              },
+              "properties": {
+                "security-severity": "5.3"
+              }
+            },
+            {
+              "id": "CVE-2024-37891",
+              "shortDescription": {
+                "text": "CVE-2024-37891"
+              },
+              "properties": {
+                "security-severity": "4.4"
+              }
+            },
+            {
+              "id": "CVE-2023-45803",
+              "shortDescription": {
+                "text": "CVE-2023-45803"
+              },
+              "properties": {
+                "security-severity": "5.7"
+              }
+            },
+            {
+              "id": "CVE-2023-43804",
+              "shortDescription": {
+                "text": "CVE-2023-43804"
+              },
+              "properties": {
+                "security-severity": "7.4"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2026-27205",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "# Flask session does not add `Vary: Cookie` header when accessed in some ways\\nWhen the `session` object is accessed, Flask should set the `Vary: Cookie` header. This instructs caches not to cache the response, as it may contain information specific to a logged in user. This is handled in most cases, but some forms of access such as the Python `in` operator were overlooked.\\n\\nThe severity depends on the application's use of the session, and the cache's behavior regarding cookies. The risk depen"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": true,
+            "package": "Flask",
+            "installed_version": "0.12.2",
+            "severity": "LOW",
+            "score": 3.1,
+            "purl": "pkg:pypi/flask@0.12.2",
+            "cve": "CVE-2026-27205",
+            "affected_version": "<3.1.3"
+          }
+        },
+        {
+          "ruleId": "CVE-2026-27205",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "# Flask session does not add `Vary: Cookie` header when accessed in some ways\\nWhen the `session` object is accessed, Flask should set the `Vary: Cookie` header. This instructs caches not to cache the response, as it may contain information specific to a logged in user. This is handled in most cases, but some forms of access such as the Python `in` operator were overlooked.\\n\\nThe severity depends on the application's use of the session, and the cache's behavior regarding cookies. The risk depen"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": true,
+            "package": "Flask",
+            "installed_version": "0.12.2",
+            "severity": "LOW",
+            "score": 2.3,
+            "purl": "pkg:pypi/flask@0.12.2",
+            "cve": "CVE-2026-27205",
+            "affected_version": "<=3.1.2"
+          }
+        },
+        {
+          "ruleId": "CVE-2023-30861",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "# Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header\\nWhen all of the following conditions are met, a response containing data intended for one client may be cached and subsequently sent by a proxy to other clients. If the proxy also caches `Set-Cookie` headers, it may send one client's `session` cookie to other clients. The severity depends on the application's use of the session, and the proxy's behavior regarding cookies. The risk depends on"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "Flask",
+            "installed_version": "0.12.2",
+            "severity": "HIGH",
+            "score": 8.7,
+            "purl": "pkg:pypi/flask@0.12.2",
+            "cve": "CVE-2023-30861",
+            "affected_version": "<=2.2.4"
+          }
+        },
+        {
+          "ruleId": "CVE-2019-1010083",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "# Pallets Project Flask is vulnerable to Denial of Service via Unexpected memory usage\\nThe Pallets Project Flask before 1.0 is affected by unexpected memory usage. The impact is denial of service. The attack vector is crafted encoded JSON data. The fixed version is 1. NOTE this may overlap CVE-2018-1000656.\\n\\n## Aliases\\nCVE-2019-1010083, PYSEC-2019-179"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "Flask",
+            "installed_version": "0.12.2",
+            "severity": "HIGH",
+            "score": 8.7,
+            "purl": "pkg:pypi/flask@0.12.2",
+            "cve": "CVE-2019-1010083",
+            "affected_version": "<=0.12.5"
+          }
+        },
+        {
+          "ruleId": "CVE-2018-1000656",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "# Flask is vulnerable to Denial of Service via incorrect encoding of JSON data\\nThe Pallets Project flask version Before 0.12.3 contains a CWE-20: Improper Input Validation vulnerability in flask that can result in Large amount of memory usage possibly leading to denial of service. This attack appear to be exploitable via Attacker provides JSON data in incorrect encoding. This vulnerability appears to have been fixed in 0.12.3.\\n\\n## Aliases\\nCVE-2018-1000656, PYSEC-2018-66"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "Flask",
+            "installed_version": "0.12.2",
+            "severity": "HIGH",
+            "score": 8.7,
+            "purl": "pkg:pypi/flask@0.12.2",
+            "cve": "CVE-2018-1000656",
+            "affected_version": "<=0.12.2"
+          }
+        },
+        {
+          "ruleId": "CVE-2020-1747",
+          "ruleIndex": 4,
+          "level": "error",
+          "message": {
+            "text": "# Improper Input Validation in PyYAML\\nA vulnerability was discovered in the PyYAML library in versions before 5.3.1, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applications that use the library to process untrusted input may be vulnerable to this flaw. An attacker could use this flaw to execute arbitrary code on the system by abusing the python/object/new constructor.\\n\\n## Aliases\\nCVE-2"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "PyYAML",
+            "installed_version": "5.3",
+            "severity": "CRITICAL",
+            "score": 9.3,
+            "purl": "pkg:pypi/pyyaml@5.3",
+            "cve": "CVE-2020-1747",
+            "affected_version": "<5.3.1"
+          }
+        },
+        {
+          "ruleId": "CVE-2020-14343",
+          "ruleIndex": 5,
+          "level": "error",
+          "message": {
+            "text": "# Improper Input Validation in PyYAML\\nA vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applications that use the library to process untrusted input may be vulnerable to this flaw. This flaw allows an attacker to execute arbitrary code on the system by abusing the python/object/new constructor. This flaw is due to an in"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "PyYAML",
+            "installed_version": "5.3",
+            "severity": "CRITICAL",
+            "score": 9.3,
+            "purl": "pkg:pypi/pyyaml@5.3",
+            "cve": "CVE-2020-14343",
+            "affected_version": "<=5.4b2"
+          }
+        },
+        {
+          "ruleId": "CVE-2024-47081",
+          "ruleIndex": 6,
+          "level": "warning",
+          "message": {
+            "text": "# Requests vulnerable to .netrc credentials leak via malicious URLs\\n### Impact\\n\\nDue to a URL parsing issue, Requests releases prior to 2.32.4 may leak .netrc credentials to third parties for specific maliciously-crafted URLs.\\n\\n### Workarounds\\nFor older versions of Requests, use of the .netrc file can be disabled with `trust_env=False` on your Requests Session ([docs](https://requests.readthedocs.io/en/latest/api/#requests.Session.trust_env)).\\n\\n### References\\nhttps://github.com/psf/reque"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "requests",
+            "installed_version": "2.31.0",
+            "severity": "MEDIUM",
+            "score": 5.3,
+            "purl": "pkg:pypi/requests@2.31.0",
+            "cve": "CVE-2024-47081",
+            "affected_version": "<=2.9.2"
+          }
+        },
+        {
+          "ruleId": "CVE-2024-35195",
+          "ruleIndex": 7,
+          "level": "warning",
+          "message": {
+            "text": "# Requests `Session` object does not verify requests after making first request with verify=False\\nWhen using a `requests.Session`, if the first request to a given origin is made with `verify=False`, TLS certificate verification may remain disabled for all subsequent requests to that origin, even if `verify=True` is explicitly specified later.\\n\\nThis occurs because the underlying connection is reused from the session's connection pool, causing the initial TLS verification setting to persist for"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "requests",
+            "installed_version": "2.31.0",
+            "severity": "MEDIUM",
+            "score": 5.6,
+            "purl": "pkg:pypi/requests@2.31.0",
+            "cve": "CVE-2024-35195",
+            "affected_version": "<=2.9.2"
+          }
+        },
+        {
+          "ruleId": "CVE-2026-21441",
+          "ruleIndex": 8,
+          "level": "error",
+          "message": {
+            "text": "# Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)\\n### Impact\\n\\nurllib3's [streaming API](https://urllib3.readthedocs.io/en/2.6.2/advanced-usage.html#streaming-and-i-o) is designed for the efficient handling of large HTTP responses by reading the content in chunks, rather than loading the entire response body into memory at once.\\n\\nurllib3 can perform decoding or decompression based on the HTTP `Content-Encoding` header (e.g., `gzip`, `deflate`, `br`, or `z"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "HIGH",
+            "score": 8.9,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2026-21441",
+            "affected_version": "<2.6.3"
+          }
+        },
+        {
+          "ruleId": "CVE-2025-66471",
+          "ruleIndex": 9,
+          "level": "error",
+          "message": {
+            "text": "# urllib3 streaming API improperly handles highly compressed data\\n### Impact\\n\\nurllib3's [streaming API](https://urllib3.readthedocs.io/en/2.5.0/advanced-usage.html#streaming-and-i-o) is designed for the efficient handling of large HTTP responses by reading the content in chunks, rather than loading the entire response body into memory at once.\\n\\nWhen streaming a compressed response, urllib3 can perform decoding or decompression based on the HTTP `Content-Encoding` header (e.g., `gzip`, `defl"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "HIGH",
+            "score": 8.9,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2025-66471",
+            "affected_version": "<2.6.0"
+          }
+        },
+        {
+          "ruleId": "CVE-2025-66418",
+          "ruleIndex": 10,
+          "level": "error",
+          "message": {
+            "text": "# urllib3 allows an unbounded number of links in the decompression chain\\n## Impact\\n\\nurllib3 supports chained HTTP encoding algorithms for response content according to RFC 9110 (e.g., `Content-Encoding: gzip, zstd`).\\n\\nHowever, the number of links in the decompression chain was unbounded allowing a malicious server to insert a virtually unlimited number of compression steps leading to high CPU usage and massive memory allocation for the decompressed data.\\n\\n\\n## Affected usages\\n\\nApplicati"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "HIGH",
+            "score": 8.9,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2025-66418",
+            "affected_version": "<2.6.0"
+          }
+        },
+        {
+          "ruleId": "CVE-2025-50181",
+          "ruleIndex": 11,
+          "level": "warning",
+          "message": {
+            "text": "# urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation\\nurllib3 handles redirects and retries using the same mechanism, which is controlled by the `Retry` object. The most common way to disable redirects is at the request level, as follows:\\n\\n```python\\nresp = urllib3.request(\"GET\", \"https://httpbin.org/redirect/1\", redirect=False)\\nprint(resp.status)\\n# 302\\n```\\n\\nHowever, it is also possible to disable redirects, for all requests, by instantiating a `Pool"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "MEDIUM",
+            "score": 5.3,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2025-50181",
+            "affected_version": "<=2.4.0"
+          }
+        },
+        {
+          "ruleId": "CVE-2024-37891",
+          "ruleIndex": 12,
+          "level": "warning",
+          "message": {
+            "text": "# urllib3's Proxy-Authorization request header isn't stripped during cross-origin redirects\\nWhen using urllib3's proxy support with `ProxyManager`, the `Proxy-Authorization` header is only sent to the configured proxy, as expected.\\n\\nHowever, when sending HTTP requests *without* using urllib3's proxy support, it's possible to accidentally configure the `Proxy-Authorization` header even though it won't have any effect as the request is not using a forwarding proxy or a tunneling proxy. In those"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "MEDIUM",
+            "score": 4.4,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2024-37891",
+            "affected_version": "<=1.26.18"
+          }
+        },
+        {
+          "ruleId": "CVE-2023-45803",
+          "ruleIndex": 13,
+          "level": "warning",
+          "message": {
+            "text": "# urllib3's request body not stripped after redirect from 303 status changes request method to GET\\nurllib3 previously wouldn't remove the HTTP request body when an HTTP redirect response using status 303 \"See Other\" after the request had its method changed from one that could accept a request body (like `POST`) to `GET` as is required by HTTP RFCs. Although the behavior of removing the request body is not specified in the section for redirects, it can be inferred by piecing together information"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "MEDIUM",
+            "score": 5.7,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2023-45803",
+            "affected_version": "<=1.26.17"
+          }
+        },
+        {
+          "ruleId": "CVE-2023-43804",
+          "ruleIndex": 14,
+          "level": "error",
+          "message": {
+            "text": "# `Cookie` HTTP header isn't stripped on cross-origin redirects\\nurllib3 doesn't treat the `Cookie` HTTP header special or provide any helpers for managing cookies over HTTP, that is the responsibility of the user. However, it is possible for a user to specify a `Cookie` header and unknowingly leak information via HTTP redirects to a different origin if that user doesn't disable redirects explicitly.\\n\\nUsers **must** handle redirects themselves instead of relying on urllib3's automatic redirect"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/Projects/DepReach/tests/test1"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "isReachable": false,
+            "package": "urllib3",
+            "installed_version": "1.26.5",
+            "severity": "HIGH",
+            "score": 7.4,
+            "purl": "pkg:pypi/urllib3@1.26.5",
+            "cve": "CVE-2023-43804",
+            "affected_version": "<=1.26.16"
+          }
+        }
+      ]
+    }
+  ]
+}

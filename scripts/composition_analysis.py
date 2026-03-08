@@ -23,21 +23,12 @@ def serialize_source_data(source_data):
         print(f"Failed to serialize source_data: {e}")
         return {}
 
-def extract_severity(vuln):
-    if hasattr(vuln.get("source_data", {}), "containers"):
-        for container in vuln["source_data"].containers or []:
-            for rating in getattr(container, "ratings", []):
-                if severity := getattr(rating, "severity", None):
-                    return severity
-    return vuln.get("severity", "UNKNOWN")
-
 def extract_version_from_purl(purl: str) -> str | None:
     if "@" in purl:
         return purl.split("@")[-1]
     return None
 
 def extract_metrics(cve_object):
-    """Get baseScore and baseSeverity from highest CVSS in metrics."""
     metrics = find_by_path(cve_object, ["containers", "cna", "metrics", "0"])
     if not metrics:
         return None, None
@@ -73,7 +64,6 @@ def extract_metrics(cve_object):
     return base_score, base_severity
 
 def find_by_path(obj, path):
-    """Find values by partial path (dict keys and list indices)."""
     def search(obj, path, current=[]):
         results = []
         if not path:
@@ -106,7 +96,6 @@ def find_by_path(obj, path):
     return search(obj, path)
 
 def find_affected_version(cve_object: dict) -> str | None:
-    """Get lessThan or lessThanOrEqual from cve_object via find_by_path."""
     versions = find_by_path(cve_object, ["containers", "cna", "affected", "0", "versions", "0"])
     if not versions:
         return None
@@ -119,31 +108,12 @@ def find_affected_version(cve_object: dict) -> str | None:
 
     return None
 
-def extract_description(vuln):
-    desc = vuln.get("description")
-    if desc:
-        return desc
-    try:
-        data = vuln.get("source_data", None)
-        if data:
-            return data.cveMetadata.description or ""
-    except Exception:
-        pass
-    return ""
-
-def extract_fixed_version(vuln):
-    affects = getattr(vuln.get("source_data", {}), "containers", [])
-    for container in affects or []:
-        for aff in getattr(container, "affected", []):
-            for ver in getattr(aff, "versions", []):
-                if getattr(ver, "status", "").lower() == "fixed":
-                    return getattr(ver, "version", "")
-    return vuln.get("fixed_location")
-
 def _process_one_component(comp: Dict) -> List[Dict]:
-    """Process one SBOM component, return list of vuln records."""
     purl = comp.get("purl")
     if not purl:
+        return []
+    if extract_version_from_purl(purl) is None:
+        logger.debug("Skipping component without version (unpinned): %s", purl)
         return []
 
     results = search_by_any(purl, with_data=True)

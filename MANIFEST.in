@@ -1,0 +1,3 @@
+include README.md LICENSE pyproject.toml depreach.py
+recursive-include scripts *.py
+global-exclude __pycache__ *.py[cod] .git*

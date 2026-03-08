@@ -16,12 +16,17 @@
 
 ## Installation
 
-DepReach is available on [PyPI](https://pypi.org/project/depreach/). Requires **Python 3.10+**.
+DepReach is available on [PyPI](https://pypi.org/project/depreach/). Requires **Python 3.10+**:
 
 ```bash
 pip install depreach
 ```
+Or install from source:
 
+```bash
+git clone https://github.com/akiracrying/DepReach.git && cd DepReach
+pip install .
+```
 ## Quick start
 
 ```bash

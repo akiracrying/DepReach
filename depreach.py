@@ -16,6 +16,7 @@ from scripts.update_db import update_vdb
 from scripts.composition_analysis import check_vulnerabilities_from_sbom, count_sbom_components
 from scripts.cache import init_cache, get_cached_reachability, cache_reachability
 from scripts.html_report import generate_html_report
+from scripts.sarif_report import write_sarif
 
 from rich.console import Console
 from rich.table import Table
@@ -86,29 +87,20 @@ ______ _____  ___  _____  _   _
     return True
 
 
-def format_description(desc: str, link: str = None) -> str:
+def format_description(desc: str) -> str:
     if not desc:
         return ""
-
     try:
         desc = desc.encode().decode(r"unicode_escape")
     except Exception:
         pass
-
-    # strip markdown
     clean = re.sub(r'`+', '', desc)
     clean = re.sub(r'\*+', '', clean)
     clean = re.sub(r'#+\s*', '', clean)
     clean = re.sub(r'\[.*?\]\(.*?\)', '', clean)
     clean = re.sub(r'\n{2,}', '\n', clean)
-    clean = clean.strip()
-
     first_line = clean.split('\n')[0].strip()
-    first_line = escape(first_line)
-    if link:
-        return f"{first_line}"
-    else:
-        return f"{first_line}"
+    return escape(first_line)
 
 def print_vulns(vulns: list[dict]):
     console = Console(width=300)
@@ -148,8 +140,7 @@ def print_vulns(vulns: list[dict]):
         row = []
         for key, *_ in columns:
             if key == "description":
-                desc_link = (vuln.get("references") or [None])[0]
-                val = format_description(vuln.get(key, ""), desc_link)
+                val = format_description(vuln.get(key, ""))
 
             elif key == "references":
                 refs = vuln.get(key, [])
@@ -188,9 +179,6 @@ def print_vulns(vulns: list[dict]):
         table.add_row(*row)
 
     console.print(table)
-
-def check_requirements():
-    ...
 
 def dep_reach(args):
 
@@ -257,14 +245,27 @@ def dep_reach(args):
             done_msg="Scanning completed",
         )
 
+        ignore_packages = {s.strip().lower() for s in (getattr(args, "ignore", "") or "").split(",") if s.strip()}
+        if ignore_packages:
+            before = len(vulns)
+            vulns = [v for v in vulns if (v.get("package") or "").lower() not in ignore_packages]
+            if before != len(vulns):
+                logger.info("Ignored %d vulns for packages: %s", before - len(vulns), ignore_packages)
+
         use_cache = args.cache
 
         if use_cache:
             init_cache()
 
         if vulns:
-            project_functions = extract_library_function_calls(src_dir)
-            call_graph = build_call_graph(src_dir)
+            def _build_graph():
+                return extract_library_function_calls(src_dir), build_call_graph(src_dir)
+            project_functions, call_graph = _run_with_timed_status(
+                "[bold]Building call graph…[/bold]",
+                _build_graph,
+                spinner="line",
+                done_msg="Call graph ready",
+            )
             logger.info(
                 "Vulnerabilities found: %d, project functions: %d, call graph nodes: %d",
                 len(vulns),
@@ -330,12 +331,58 @@ def dep_reach(args):
         except Exception as e:
             logger.exception("Failed to generate HTML report: %s", e)
 
+        sarif_path = getattr(args, "sarif", None)
+        if sarif_path:
+            try:
+                write_sarif(vulns, sarif_path, project_uri=os.path.abspath(src_dir))
+                console.print(f"[dim]SARIF report saved to {sarif_path}[/dim]")
+            except Exception as e:
+                logger.exception("Failed to write SARIF: %s", e)
 
-if __name__ == "__main__":
-    """
-    SCA Scanner with reachability analysis
-    """
-    # Redirect stdin to prevent child processes (Docker, VDB, etc.) from blocking on Enter
+        def _is_reachable(v):
+            r = v.get("reachability") or {}
+            if not isinstance(r, dict):
+                return False
+            for info in r.values():
+                if isinstance(info, dict) and info.get("is_reachable"):
+                    return True
+            return False
+
+        has_reachable = any(_is_reachable(v) for v in vulns) if vulns else False
+        if not vulns:
+            return (vulns, 0)
+        return (vulns, 2 if has_reachable else 1)
+    return ([], 0)
+
+
+def run(
+    input_dir: str,
+    output_file: str = "report.json",
+    *,
+    skip_update: bool = False,
+    cache: bool = False,
+    jobs: int = None,
+    ignore: str = "",
+    sarif_path: str = None,
+):
+    """Run DepReach scan programmatically. Returns (vulns_list, exit_code).
+    exit_code: 0 = no vulns, 1 = vulns but none reachable, 2 = at least one reachable."""
+    if jobs is None:
+        jobs = MAX_REACHABILITY_WORKERS
+    ns = argparse.Namespace(
+        input=input_dir,
+        output=output_file,
+        skip_update=skip_update,
+        cache=cache,
+        jobs=jobs,
+        ignore=ignore or "",
+        sarif=sarif_path or "",
+    )
+    return dep_reach(ns)
+
+
+def main():
+    """CLI entry point (for pip-installed depreach and programmatic use)."""
     if sys.stdin.isatty():
         fd = os.open(os.devnull, os.O_RDONLY)
         os.dup2(fd, 0)
@@ -347,13 +394,16 @@ if __name__ == "__main__":
     parser.add_argument("--skip-update", action="store_true", help="Skip updating the vulnerability database")
     parser.add_argument("--cache", action="store_true", help="Cache reachability results in local SQLite")
     parser.add_argument("--jobs", "-j", type=int, default=MAX_REACHABILITY_WORKERS, help="Parallel jobs for reachability analysis (default: %(default)s)")
+    parser.add_argument("--ignore", type=str, default="", help="Comma-separated package names to ignore (e.g. flask,requests)")
+    parser.add_argument("--sarif", type=str, default="", help="Write SARIF 2.1 file (reachability in result.properties) for ASPM/Code Scanning")
 
     args = parser.parse_args()
-
-
     start_time = time.time()
-
-    dep_reach(args)
-
+    vulns, exit_code = dep_reach(args)
     elapsed = time.time() - start_time
     console.print(f"[bold]Finished in {elapsed:.1f}s[/bold]")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

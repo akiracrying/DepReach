@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "depreach"
+dynamic = ["version"]
+description = "SCA with reachability — find out if vulnerable code is actually reachable"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "DepReach" }]
+keywords = ["sca", "security", "vulnerability", "reachability", "sbom", "cyclonedx"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "appthreat-vulnerability-db>=6.6.0",
+    "apsw>=3.51",
+    "cyclonedx-bom>=5.0",
+    "cyclonedx-python-lib>=9.0",
+    "rich>=13.0",
+    "requests>=2.28",
+    "packageurl-python>=0.15",
+    "custom-json-diff>=0.3",
+    "pydantic>=2.0",
+    "SQLAlchemy>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/akiracrying/DepReach"
+Repository = "https://github.com/akiracrying/DepReach"
+
+[project.scripts]
+depreach = "depreach:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = ["scripts"]
+py-modules = ["depreach"]
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+)$"

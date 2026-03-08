@@ -18,6 +18,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install and run tests
+        run: |
+          pip install -e ".[dev]"
+          pytest tests/ -v
+
       - name: Install build
         run: pip install build
 

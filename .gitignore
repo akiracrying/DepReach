@@ -286,8 +286,6 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
-
-tests
 .idea
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
 
@@ -296,3 +294,6 @@ reports/
 depreach_cache.db
 depreach.log
 data/
+
+# Local test data / junk (not part of repo)
+tests_local/

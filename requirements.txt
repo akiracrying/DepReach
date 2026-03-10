@@ -10,3 +10,4 @@ packageurl-python>=0.15
 custom-json-diff>=0.3
 pydantic>=2.0
 SQLAlchemy>=2.0
+oras>=0.1.30

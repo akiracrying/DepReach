@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "appthreat-vulnerability-db>=6.6.0",
     "apsw>=3.51",
+    "oras>=0.1.30",
     "cyclonedx-bom>=5.0",
     "cyclonedx-python-lib>=9.0",
     "rich>=13.0",

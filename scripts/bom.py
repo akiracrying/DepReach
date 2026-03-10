@@ -25,15 +25,14 @@ def _choose_python_provider(src_dir):
         return "environment", [venv_python]
     if os.path.isfile(os.path.join(abs_src, "poetry.lock")):
         return "poetry", [abs_src]
-    if os.path.isfile(os.path.join(abs_src, "Pipfile")):
+    if os.path.isfile(os.path.join(abs_src, "Pipfile")) or os.path.isfile(os.path.join(abs_src, "Pipfile.lock")):
         return "pipenv", [abs_src]
-    req_files = [
+    for req_path in [
         os.path.join(abs_src, "requirements.txt"),
         os.path.join(abs_src, "requirements", "requirements.txt"),
-    ]
-    for p in req_files:
-        if os.path.isfile(p):
-            return "requirements", [p]
+    ]:
+        if os.path.isfile(req_path):
+            return "requirements", [req_path]
     return "requirements", [os.path.join(abs_src, "requirements.txt")]
 
 

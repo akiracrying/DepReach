@@ -49,10 +49,13 @@ def find_python_reqfiles(path):
     req_files = [
         "requirements.txt",
         "Pipfile",
-        "poetry.lock",
         "Pipfile.lock",
-        "conda.yml",
+        "poetry.lock",
         "pyproject.toml",
+        "uv.lock",
+        "pdm.lock",
+        "conda.yml",
+        "environment.yml",
     ]
     for root, dirs, files in os.walk(path):
         filter_ignored_dirs(dirs)

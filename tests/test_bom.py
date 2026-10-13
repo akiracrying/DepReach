@@ -60,3 +60,23 @@ def test_choose_provider_venv_over_lock(tmp_path):
     assert provider == "environment"
     assert len(args) == 1
     assert "python" in args[0]
+
+
+def test_failed_sbom_does_not_reuse_stale_output(tmp_path, monkeypatch):
+    import subprocess
+    from scripts.bom import generate_sbom_python
+    (tmp_path / "requirements.txt").write_text("demo==1", encoding="utf-8")
+    output = tmp_path / "sbom.json"
+    output.write_text("old report", encoding="utf-8")
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "cyclonedx_py")
+    monkeypatch.setattr(subprocess, "run", fail)
+    assert generate_sbom_python(str(tmp_path), str(output)) is False
+    assert output.read_text(encoding="utf-8") == "old report"
+    assert not list(tmp_path.glob(".sbom-*"))
+
+
+def test_uv_lock_alone_is_explicitly_unsupported(tmp_path):
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="uv.lock"):
+        _choose_python_provider(tmp_path)

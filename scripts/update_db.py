@@ -1,16 +1,14 @@
 import logging
 
-from vdb.lib import config, db6 as db_lib
-from vdb.lib.orasclient import download_image
-
 logger = logging.getLogger(__name__)
 
 
 def update_vdb(silent: bool = False):
     """Check VDB freshness and update if needed. silent: no print (for CLI spinner)."""
-    VDB_AGE_HOURS = 8
+    from vdb.lib import config, db6 as db_lib
+    from vdb.lib.orasclient import download_image
 
-    if db_lib.needs_update():
+    if db_lib.needs_update(hours=8, days=0, default_status=True):
         if not silent:
             print("Updating Vulnerabilities Database...")
         try:

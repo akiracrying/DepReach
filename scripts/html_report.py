@@ -3,6 +3,13 @@ import os
 import re
 import html as html_lib
 from collections import defaultdict
+from scripts.reachability_result import reachability_status, reachability_value, explain_result
+from urllib.parse import urlparse
+
+
+def _reference_url(value):
+    value = str(value or "").strip()
+    return value if urlparse(value).scheme.lower() in {"http", "https"} else ""
 
 
 def _severity_rank(sev: str) -> int:
@@ -24,7 +31,7 @@ def _js_json(obj) -> str:
     """
     s = json.dumps(obj, ensure_ascii=False)
     # escape for script tag
-    return s.replace("</script>", "<\\/script>")
+    return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
 def _clean_description(desc: str, max_len: int = 200) -> str:
@@ -100,13 +107,8 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             except Exception:
                 pass
 
-        reach = v.get("reachability") or {}
-        is_reachable = False
-        if isinstance(reach, dict):
-            for info in reach.values():
-                if isinstance(info, dict) and info.get("is_reachable"):
-                    is_reachable = True
-                    break
+        state = reachability_status(v.get("reachability"))
+        is_reachable = reachability_value(v.get("reachability"))
         if is_reachable:
             stats["reachableVulnCount"] += 1
             total_reachable += 1
@@ -121,6 +123,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
                 "score": v.get("score"),
                 "affected_version": v.get("affected_version"),
                 "reachable": is_reachable,
+                "reachabilityStatus": state,
                 "description": _clean_description(v.get("description", "") or "", max_len=260),
             }
         )
@@ -184,6 +187,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     # for client JS
     graph_data = {"nodes": nodes, "links": links}
 
+    project_name = html_lib.escape(project_name)
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -505,16 +509,16 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       gap: 4px;
       white-space: nowrap;
     }}
-    /* reachable = bad (red), not reachable = good (green) */
+    /* A missing modeled path is not a safety verdict. */
     .reach-yes {{
       border-color: rgba(248,81,73,0.9);
       background: rgba(248,81,73,0.18);
       color: var(--danger);
     }}
     .reach-no {{
-      border-color: rgba(63,185,80,0.9);
-      background: rgba(63,185,80,0.16);
-      color: var(--success);
+      border-color: rgba(240,136,62,0.9);
+      background: rgba(240,136,62,0.16);
+      color: var(--warning);
     }}
     .reach-unknown {{ border-color: rgba(139,148,158,0.8); color: var(--text-muted); }}
 
@@ -563,7 +567,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
           <span class="legend-dot" style="background: var(--danger)"></span> reachable vulnerability
         </div>
         <div class="legend-item">
-          <span class="legend-dot" style="background: var(--warning)"></span> vulnerable (not reachable)
+          <span class="legend-dot" style="background: var(--warning)"></span> vulnerable (no confirmed path)
         </div>
         <div class="legend-item">
           <span class="legend-dot" style="background: var(--success)"></span> no known vulnerabilities
@@ -607,13 +611,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
 
     # sort: reachable first, then severity/score
     def _vuln_sort_key(v):
-        reach = v.get("reachability") or {}
-        reachable = False
-        if isinstance(reach, dict):
-            for info in reach.values():
-                if isinstance(info, dict) and info.get("is_reachable"):
-                    reachable = True
-                    break
+        reachable = reachability_status(v.get("reachability")) == "reachable"
         sev = v.get("severity") or "UNKNOWN"
         score = v.get("score")
         try:
@@ -643,25 +641,13 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         short_desc_html = html_lib.escape(short_desc)
         full_desc_html = html_lib.escape(full_desc)
 
-        # reachability
-        reach_status = "unknown"
-        if isinstance(reach, dict) and reach:
-            any_yes = any(isinstance(info, dict) and info.get("is_reachable") for info in reach.values())
-            any_no = any(isinstance(info, dict) and info.get("is_reachable") is False for info in reach.values())
-            if any_yes:
-                reach_status = "yes"
-            elif any_no:
-                reach_status = "no"
-
-        if reach_status == "yes":
-            reach_label = "reachable"
-        elif reach_status == "no":
-            reach_label = "not reachable"
-        else:
-            reach_label = "unknown"
+        state = reachability_status(reach)
+        reach_status = {"reachable": "yes", "no_path_found": "no"}.get(state, "unknown")
+        reach_label = state.replace("_", " ")
 
         pkg_esc = html_lib.escape(pkg)
-        reach_attr = "yes" if reach_status == "yes" else "no"
+        purl, ver, cve, affected, cwe = [html_lib.escape(str(value or ""), quote=True) for value in (purl, ver, cve, affected, cwe)]
+        reach_attr = reach_status
         html += f'            <tr data-purl="{purl}" data-package="{pkg_esc}" data-reachable="{reach_attr}">\n'
         html += f'              <td class="col-package"><span class="pkg-filter" data-package="{pkg_esc}" title="Filter by this package">{pkg_esc}</span></td>\n'
         html += f"              <td>{ver}</td>\n"
@@ -670,6 +656,41 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         html += f"              <td>{score}</td>\n"
         html += '              <td>'
         html += f'<span class="reach-pill reach-{reach_status}">{reach_label}</span>'
+        if isinstance(reach, dict) and (reach.get("reasons") or reach.get("paths")):
+            html += '<p>' + html_lib.escape(explain_result(reach)) + '</p>'
+            details = []
+            if v.get("component_refs"):
+                details.append("SBOM instances: " + ", ".join(v["component_refs"]))
+            for function in reach.get("function_results", []):
+                details.append(function["symbol"] + " — path " + function["call_path_status"] + " (" + function["status"] + ")")
+            for mapping in reach.get("mappings", []):
+                details.append(f"{mapping['symbol']} @ {mapping['file']}:{mapping['line']} [{mapping['method']}]")
+            for review in reach.get("reviewed_targets", []):
+                details.append(f"Reviewed model {review['model_id']}: {review['symbol']} [{review['status']}]; exploit conditions not evaluated")
+            for mapping in reach.get("mappings", []):
+                if mapping.get("mapping_evidence"):
+                    details.append(f"{mapping['symbol']}: {mapping['mapping_evidence']}; {mapping['vulnerability_evidence']}")
+            for path in reach.get("paths", []):
+                details.append(" → ".join(step["symbol"] + (" [possible callback]" if step.get("edge_kind") == "passed_callable_may_be_invoked" else "") for step in path))
+            details.extend(reach.get("reasons", []))
+            for path in reach.get("speculative_paths", []):
+                details.append("Speculative callback path (invocation unverified): " + " -> ".join(step["symbol"] for step in path))
+            for path in reach.get("paths", []):
+                for step in path:
+                    callback = step.get("callback_evidence")
+                    if callback:
+                        details.append(f"Callback {callback['parameter']} invoked by {callback['consumer']} at {callback['consumer_file']}:{callback['invocation_lines']}")
+            explanation = html_lib.escape("\n".join(details))
+            html += f'<details><summary>Evidence / limitations</summary><pre style="white-space:pre-wrap">{explanation}</pre></details>'
+        if reach.get("patch_evidence"):
+            patch_text = []
+            for item in reach["patch_evidence"]:
+                patch_text.append(f"{item['reference']}\n{item['file']}:{item['old_start']} — {item.get('outcome', 'unmapped')}")
+                if item.get("parent_url"):
+                    patch_text.append("Fix parent: " + item["parent_url"])
+                patch_text.append("Old context:\n" + item["old_context"])
+                patch_text.extend(("+" if c["kind"] == "added" else "-") + c["text"] for c in item["changes"])
+            html += '<details><summary>Fix diff / function mapping</summary><pre style="white-space:pre-wrap">' + html_lib.escape("\n\n".join(patch_text)) + '</pre></details>'
         html += "</td>\n"
         html += '              <td class="col-desc">\n'
         html += f'                <span class="desc-short">{short_desc_html}</span>\n'
@@ -685,18 +706,18 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             main_refs = visible_refs[:2]
             extra_refs = visible_refs[2:]
             for url in main_refs:
-                clean_url = (url or '').strip()
+                clean_url = _reference_url(url)
                 if not clean_url:
                     continue
-                url_esc = clean_url.replace('"', "%22")
+                url_esc = html_lib.escape(clean_url, quote=True)
                 html += f'                <a href="{url_esc}" target="_blank" rel="noreferrer noopener">{html_lib.escape(clean_url)}</a><br/>\n'
             if extra_refs:
                 html += '                <div class="refs-extra">\n'
                 for url in extra_refs:
-                    clean_url = (url or '').strip()
+                    clean_url = _reference_url(url)
                     if not clean_url:
                         continue
-                    url_esc = clean_url.replace('"', "%22")
+                    url_esc = html_lib.escape(clean_url, quote=True)
                     html += f'                  <a href="{url_esc}" target="_blank" rel="noreferrer noopener">{html_lib.escape(clean_url)}</a><br/>\n'
                 html += "                </div>\n"
                 more = len(extra_refs)

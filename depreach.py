@@ -10,11 +10,14 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scripts.bom import generate_sbom_python
+from scripts.dependency_sources import prepare_source_context
+from scripts.analysis_session import AnalysisSession
 from scripts.detect_type import detect_project_type
-from scripts.reachability import check_reachability, extract_library_function_calls, build_call_graph
+from scripts.reachability import check_reachability
 from scripts.update_db import update_vdb
 from scripts.composition_analysis import check_vulnerabilities_from_sbom, count_sbom_components
-from scripts.cache import init_cache, get_cached_reachability, cache_reachability
+from scripts.cache import init_cache
+from scripts.reachability_result import reachability_status, explain_result
 from scripts.html_report import generate_html_report
 from scripts.sarif_report import write_sarif
 
@@ -103,7 +106,7 @@ def format_description(desc: str) -> str:
     return escape(first_line)
 
 def print_vulns(vulns: list[dict]):
-    console = Console(width=300)
+    console = Console()
 
     table = Table(title="Vulnerabilities Report", box=box.SQUARE, padding=(0, 1), show_lines=True)
 
@@ -111,18 +114,16 @@ def print_vulns(vulns: list[dict]):
         console.print("[bold yellow]No vulnerabilities found.[/bold yellow]")
         return
 
+    from collections import Counter
+    totals = Counter(reachability_status(v.get("reachability")) for v in vulns)
+    console.print(f"Findings: {len(vulns)} | " + " | ".join(f"{k}: {v}" for k, v in sorted(totals.items())))
     columns = [
-        ("package", "Package", None, True),
-        ("installed_version", "Installed version", None, True),
-        ("purl", "PURL", None, True),
-        ("cve", "CVE", None, True),
-        ("severity", "Severity", None, True),
-        ("score", "CVSS Score", None, True),
-        ("description", "Description", 60, False),
-        ("affected_version", "Affected version", None, True),
-        ("CWE", "CWE", None, True),
-        ("references", "References", None, False),
-        ("reachable", "Reachable?", 10, True),
+        ("package", "Package", None, False),
+        ("installed_version", "Version", None, False),
+        ("cve", "CVE / GHSA", None, False),
+        ("severity", "Severity", None, False),
+        ("reachable", "Call analysis", None, False),
+        ("explanation", "Evidence / missing information", None, False),
     ]
 
     for key, header, width, nowrap in columns:
@@ -139,7 +140,9 @@ def print_vulns(vulns: list[dict]):
     for vuln in vulns:
         row = []
         for key, *_ in columns:
-            if key == "description":
+            if key == "explanation":
+                val = escape(explain_result(vuln.get("reachability") or {}))
+            elif key == "description":
                 val = format_description(vuln.get(key, ""))
 
             elif key == "references":
@@ -151,27 +154,11 @@ def print_vulns(vulns: list[dict]):
                     val += f"\n...and {rest} more"
 
             elif key == "reachable":
-                reach = vuln.get("reachability", {})
-                if not reach:
-                    val = "[dim]—[/dim]"
-                else:
-                    lines = []
-                    for i, (url, info) in enumerate(reach.items(), 1):
-                        if info != "Unknown":
-                            try:
-                                mark = "[green]✅[/green]" if info.get("is_reachable") else "[red]❌[/red]"
-                            except Exception:
-                                status = reach.get("is_reachable")
-                                if status is True:
-                                    mark = "[green]✅[/green]"
-                                elif status is False:
-                                    mark = "[red]❌[/red]"
-                                else:
-                                    mark = "Unknown"
-                        else:
-                            mark = "Unknown"
-                        lines.append(f"{i}. {mark}")
-                    val = "\n".join(lines)
+                state = reachability_status(vuln.get("reachability"))
+                val = {"reachable": "[red]reachable[/red]",
+                       "no_path_found": "[yellow]no path found[/yellow]",
+                       "unknown": "[dim]unknown[/dim]",
+                       "unsupported": "[dim]unsupported[/dim]"}[state]
 
             else:
                 val = str(vuln.get(key, ""))
@@ -195,15 +182,30 @@ def dep_reach(args):
         args.jobs,
     )
 
+    if not os.path.isdir(src_dir):
+        raise ValueError(f"Input directory does not exist: {src_dir}")
+    if args.jobs < 1:
+        raise ValueError("jobs must be at least 1")
+    dependency_sources = getattr(args, "dependency_source", []) or []
+    package_sources = getattr(args, "package_sources", {}) or {}
+    dependency_sources = list(dict.fromkeys([*dependency_sources, *package_sources.values()]))
+    include_tests = getattr(args, "include_tests", False)
+    bom_options = {}
+    for option in ("target_environment", "requirements_file", "all_environments"):
+        if getattr(args, option, None):
+            bom_options[option] = getattr(args, option)
+    for source in dependency_sources:
+        if not os.path.isdir(source):
+            raise ValueError(f"Dependency source directory does not exist: {source}")
     project_types = detect_project_type(src_dir)
     if not project_types:
         project_types = ["universal"]
     if "python" not in project_types:
         console.print(
-            "[red]Docker/cdxgen is temporarily disabled.[/red] Only Python projects are supported for testing.\n"
+            "[red]Docker/cdxgen is temporarily disabled.[/red] Only Python projects are supported.\n"
             "  → Use a directory with requirements.txt, pyproject.toml, poetry.lock, or Pipfile."
         )
-        raise SystemExit(1)
+        raise ValueError("Only Python projects are supported")
 
     project_name = os.path.basename(os.path.abspath(os.path.normpath(src_dir)))
     output_dir = os.path.join("reports", project_name)
@@ -221,17 +223,17 @@ def dep_reach(args):
                 done_msg="VDB updated",
             )
         logger.info("Generating SBOM (Python) for %s -> %s", src_dir, sbom_file)
-        _run_with_timed_status(
+        sbom_generated = _run_with_timed_status(
             "[bold]Generating SBOM…[/bold]",
-            lambda: generate_sbom_python(src_dir, sbom_file),
+            lambda: generate_sbom_python(src_dir, sbom_file, **bom_options),
             done_msg="SBOM generated",
         )
         logger.info("SBOM generation finished, checking file %s", sbom_file)
-        if not os.path.exists(sbom_file):
+        if not sbom_generated or not os.path.exists(sbom_file):
             console.print(
                 "[red]SBOM was not generated.[/red] Check that the project has requirements.txt, poetry.lock, or Pipfile."
             )
-            raise SystemExit(1)
+            raise RuntimeError("SBOM generation failed")
         logger.info("Starting vulnerability scan from SBOM %s", sbom_file)
         n_comp = count_sbom_components(sbom_file)
         est_lo = max(1, n_comp // 150)
@@ -258,46 +260,32 @@ def dep_reach(args):
             init_cache()
 
         if vulns:
-            def _build_graph():
-                return extract_library_function_calls(src_dir), build_call_graph(src_dir)
-            project_functions, call_graph = _run_with_timed_status(
-                "[bold]Building call graph…[/bold]",
-                _build_graph,
-                spinner="line",
-                done_msg="Call graph ready",
+            import json
+            source_context = _run_with_timed_status(
+                "[bold]Resolving exact dependency sources...[/bold]",
+                lambda: prepare_source_context(sbom_file, overrides=package_sources, jobs=args.jobs),
+                done_msg="Dependency sources prepared",
             )
-            logger.info(
-                "Vulnerabilities found: %d, project functions: %d, call graph nodes: %d",
-                len(vulns),
-                len(project_functions),
-                len(call_graph),
-            )
-
-            to_analyze = []
-            cached_count = 0
-            for idx, vuln in enumerate(vulns):
-                if use_cache:
-                    cached = get_cached_reachability(vuln["purl"], vuln["cve"])
-                    if cached:
-                        vuln["reachability"] = cached
-                        cached_count += 1
-                        print(f"[cache] Using cached result for {vuln['purl']} (CVE: {vuln['cve']})")
-                        continue
-                to_analyze.append((idx, vuln))
-
-            logger.info(
-                "Reachability phase: total=%d, cached=%d, to_analyze=%d",
-                len(vulns),
-                cached_count,
-                len(to_analyze),
-            )
+            manifest_path = os.path.join(output_dir, "dependency-sources.json")
+            source_context["manifest_path"] = os.path.abspath(manifest_path)
+            with open(manifest_path, "w", encoding="utf-8") as stream:
+                json.dump(source_context, stream, indent=2)
+            resolved_packages = {item["purl"]: item["source"] for item in source_context["sources"]}
+            dependency_sources = list(dict.fromkeys([*dependency_sources, *resolved_packages.values()]))
+            package_sources = {**resolved_packages, **package_sources}
+            session = AnalysisSession(freeze_sources=True)
+            console.print(f"[dim]Sources: {len(resolved_packages)}; inventory/source gaps: {len(source_context['issues'])}[/dim]")
+            to_analyze = list(enumerate(vulns))
 
             if to_analyze:
                 def analyze_one(idx_vuln):
                     idx, vuln = idx_vuln
                     report = check_reachability(
-                        vuln["references"], project_functions, call_graph,
-                        purl=vuln["purl"],
+                        vuln["references"], purl=vuln["purl"], project_dir=src_dir,
+                        dependency_sources=dependency_sources, include_tests=include_tests,
+                        use_cache=use_cache, cve=vuln["cve"],
+                        library_source=package_sources.get(vuln["purl"]),
+                        analysis_session=session, source_context=source_context,
                     )
                     return idx, report
 
@@ -309,13 +297,16 @@ def dep_reach(args):
                         for future in as_completed(futures):
                             idx, report = future.result()
                             vulns[idx]["reachability"] = report
-                            if use_cache:
-                                cache_reachability(vulns[idx]["purl"], vulns[idx]["cve"], report)
                             done += 1
                             elapsed = int(time.time() - reach_start)
                             status.update(f"[bold green]Analyzing reachability ({done}/{len(to_analyze)})…[/bold green] [dim]({elapsed}s)[/dim]")
                 reach_elapsed = int(time.time() - reach_start)
                 console.print(f"[dim]Reachability analysis completed in {reach_elapsed}s[/dim]")
+                metrics = session.metrics()
+                console.print(f"[dim]Graph builds: {metrics['graph_builds']}; reused: {metrics['graph_hits']}[/dim]")
+                console.print(f"[dim]Source captures: {metrics['source_captures']}; files read: {metrics['source_files']}; snapshot reuses: {metrics['source_snapshot_hits']}[/dim]")
+                for finding in vulns:
+                    finding["reachability"]["analysis_metrics"] = metrics
 
         print_vulns(vulns)
 
@@ -330,6 +321,7 @@ def dep_reach(args):
             console.print(f"[dim]HTML report saved to {html_report_file}[/dim]")
         except Exception as e:
             logger.exception("Failed to generate HTML report: %s", e)
+            raise RuntimeError("HTML report generation failed") from e
 
         sarif_path = getattr(args, "sarif", None)
         if sarif_path:
@@ -338,17 +330,12 @@ def dep_reach(args):
                 console.print(f"[dim]SARIF report saved to {sarif_path}[/dim]")
             except Exception as e:
                 logger.exception("Failed to write SARIF: %s", e)
+                raise RuntimeError("Requested SARIF export failed") from e
 
-        def _is_reachable(v):
-            r = v.get("reachability") or {}
-            if not isinstance(r, dict):
-                return False
-            for info in r.values():
-                if isinstance(info, dict) and info.get("is_reachable"):
-                    return True
-            return False
-
-        has_reachable = any(_is_reachable(v) for v in vulns) if vulns else False
+        statuses = [reachability_status(v.get("reachability")) for v in vulns]
+        has_reachable = "reachable" in statuses
+        if not has_reachable and any(s in {"unknown", "unsupported"} for s in statuses):
+            return (vulns, 3)
         if not vulns:
             return (vulns, 0)
         return (vulns, 2 if has_reachable else 1)
@@ -364,9 +351,15 @@ def run(
     jobs: int = None,
     ignore: str = "",
     sarif_path: str = None,
+    dependency_sources=(),
+    package_sources=None,
+    include_tests: bool = False,
+    target_environment=None,
+    all_environments: bool = False,
+    requirements_file=None,
 ):
     """Run DepReach scan programmatically. Returns (vulns_list, exit_code).
-    exit_code: 0 = no vulns, 1 = vulns but none reachable, 2 = at least one reachable."""
+    exit_code: 0 = no vulns, 1 = no modeled path, 2 = reachable, 3 = inconclusive."""
     if jobs is None:
         jobs = MAX_REACHABILITY_WORKERS
     ns = argparse.Namespace(
@@ -377,6 +370,12 @@ def run(
         jobs=jobs,
         ignore=ignore or "",
         sarif=sarif_path or "",
+        dependency_source=list(dependency_sources),
+        package_sources=package_sources or {},
+        include_tests=include_tests,
+        target_environment=target_environment,
+        all_environments=all_environments,
+        requirements_file=requirements_file,
     )
     return dep_reach(ns)
 
@@ -397,9 +396,26 @@ def main():
     parser.add_argument("--ignore", type=str, default="", help="Comma-separated package names to ignore (e.g. flask,requests)")
     parser.add_argument("--sarif", type=str, default="", help="Write SARIF 2.1 file (reachability in result.properties) for ASPM/Code Scanning")
 
+    parser.add_argument("--dependency-source", action="append", default=[], help="Additional dependency source root (repeatable; exact installed versions)")
+    parser.add_argument("--include-tests", action="store_true", help="Include first-party tests in possible call roots")
+    parser.add_argument("--package-source", action="append", default=[], metavar="PURL=PATH", help="Use local source for an exact package version (repeatable)")
+    parser.add_argument("--target-environment", help="JSON marker environment override for pinned requirements; defaults to scanner environment")
+    parser.add_argument("--all-environments", action="store_true", help="Keep all requirement marker alternatives; not one resolved runtime")
+    parser.add_argument("--requirements", dest="requirements_file", help="Explicit requirements file, relative to input directory or absolute (for example requirements/prod.txt)")
     args = parser.parse_args()
+    args.package_sources = {}
+    for entry in args.package_source:
+        purl, separator, path = entry.partition("=")
+        if not separator or not purl.startswith("pkg:pypi/") or "@" not in purl or not path:
+            parser.error("--package-source requires pkg:pypi/name@version=path")
+        args.package_sources[purl] = path
     start_time = time.time()
-    vulns, exit_code = dep_reach(args)
+    try:
+        vulns, exit_code = dep_reach(args)
+    except Exception as exc:
+        logger.exception("Scan failed")
+        console.print(f"[red]Scan failed: {escape(str(exc))}[/red]")
+        return 4
     elapsed = time.time() - start_time
     console.print(f"[bold]Finished in {elapsed:.1f}s[/bold]")
     return exit_code

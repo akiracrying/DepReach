@@ -4,10 +4,9 @@ import warnings
 import logging
 
 from custom_json_diff.lib.utils import json_load
-from vdb.lib.search import search_by_any, search_by_purl_like
-from scripts.detect_type import detect_project_type
+from packageurl import PackageURL
 from typing import List, Dict
-from pydantic import BaseModel, AnyUrl
+from pydantic import BaseModel
 from itertools import chain
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -24,9 +23,36 @@ def serialize_source_data(source_data):
         return {}
 
 def extract_version_from_purl(purl: str) -> str | None:
-    if "@" in purl:
-        return purl.split("@")[-1]
-    return None
+    try:
+        return PackageURL.from_string(purl).version
+    except (TypeError, ValueError):
+        return None
+
+
+def search_by_any(*args, **kwargs):
+    from vdb.lib.search import search_by_any as search
+    return search(*args, **kwargs)
+
+
+def search_by_purl_like(*args, **kwargs):
+    from vdb.lib.search import search_by_purl_like as search
+    return search(*args, **kwargs)
+
+
+def ensure_vdb_available():
+    from vdb.lib import config
+    import sqlite3
+    for path, table in [(config.VDB_BIN_FILE, "cve_data"), (config.VDB_BIN_INDEX, "cve_index")]:
+        if not os.path.isfile(path):
+            raise RuntimeError("Vulnerability database is missing; update VDB before scanning")
+        try:
+            from pathlib import Path
+            with sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True) as db:
+                populated = db.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            if not populated:
+                raise RuntimeError("Vulnerability database is empty; update VDB before scanning")
+        except sqlite3.Error as exc:
+            raise RuntimeError("Vulnerability database is unreadable") from exc
 
 def extract_metrics(cve_object):
     metrics = find_by_path(cve_object, ["containers", "cna", "metrics", "0"])
@@ -116,9 +142,9 @@ def _process_one_component(comp: Dict) -> List[Dict]:
         logger.debug("Skipping component without version (unpinned): %s", purl)
         return []
 
+    # For PURLs, VDB's search_by_any already delegates to search_by_purl_like.
+    # An empty result must not trigger an identical second database query.
     results = search_by_any(purl, with_data=True)
-    if not results:
-        results = search_by_purl_like(purl, with_data=True)
 
     out = []
     for vuln in results:
@@ -165,18 +191,36 @@ def check_vulnerabilities_from_sbom(src_dir: str, bom_file: str) -> List[Dict]:
         raise FileNotFoundError(f"No BOM found at {bom_file}")
 
     sbom_data = json_load(bom_file)
+    if not isinstance(sbom_data, dict) or sbom_data.get("bomFormat") != "CycloneDX":
+        raise ValueError("Expected a CycloneDX JSON SBOM")
+    missing_identity = [c for c in sbom_data.get("components", []) if c.get("type", "library") == "library" and not c.get("purl")]
+    if missing_identity:
+        raise ValueError(f"SBOM contains {len(missing_identity)} libraries without package identity")
     components = [c for c in sbom_data.get("components", []) if c.get("purl")]
+    unresolved = [c for c in components if not extract_version_from_purl(c["purl"])]
+    if unresolved:
+        raise ValueError(f"SBOM contains {len(unresolved)} unversioned dependencies; resolve exact installed versions first")
+    ensure_vdb_available()
     logger.info("Starting SBOM scan: %d components with purl", len(components))
 
+    # Query a package version once, retaining every SBOM instance that uses it.
+    # npm can install the same PURL at multiple distinct resolution locations.
+    by_purl, instance_refs = {}, {}
+    for comp in components:
+        by_purl.setdefault(comp["purl"], comp)
+        if comp.get("bom-ref"):
+            instance_refs.setdefault(comp["purl"], set()).add(comp["bom-ref"])
     # vdb/APSW: no multiprocessing or threading (database locked)
     all_vulns = []
-    for comp in components:
-        all_vulns.extend(_process_one_component(comp))
+    for purl, comp in by_purl.items():
+        for finding in _process_one_component(comp):
+            finding["component_refs"] = sorted(instance_refs.get(purl, ()))
+            all_vulns.append(finding)
 
     seen = set()
     unique_vulns = []
     for v in all_vulns:
-        key = (v["package"], v["cve"], v["affected_version"])
+        key = (v["purl"], v["cve"])
         if key not in seen:
             seen.add(key)
             unique_vulns.append(v)

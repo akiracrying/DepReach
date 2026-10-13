@@ -1,0 +1,489 @@
+{
+  "schema_version": 1,
+  "label_scope": "Structural possible target paths from all first-party functions and module code; exploitability and path conditions are not ground truth here.",
+  "label_method": "Manual source reasoning by the coding assistant, stored independently of scanner results; not externally human-reviewed.",
+  "cases": [
+    {
+      "id": "direct_call",
+      "kind": "fixture",
+      "app_source": "from lib import danger\ndanger()\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "present",
+      "label_reason": "The imported dependency function is called directly."
+    },
+    {
+      "id": "unused_function",
+      "kind": "fixture",
+      "app_source": "def run():\n    return 3\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "No imports or calls connect the application to the dependency."
+    },
+    {
+      "id": "same_name_local",
+      "kind": "fixture",
+      "app_source": "def danger():\n    return 2\ndef run():\n    return danger()\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "The called symbol belongs to app, not lib; the library is never imported."
+    },
+    {
+      "id": "callback_invoked",
+      "kind": "fixture",
+      "app_source": "from lib import consume, danger\nconsume(danger)\n",
+      "library_files": {
+        "lib.py": "def consume(cb):\n    return cb()\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,4 +1,4 @@\n def consume(cb):\n     return cb()\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "present",
+      "label_reason": "The consumer directly invokes the parameter bound to lib.danger."
+    },
+    {
+      "id": "callback_ignored",
+      "kind": "fixture",
+      "app_source": "from lib import consume, danger\nconsume(danger)\n",
+      "library_files": {
+        "lib.py": "def consume(cb):\n    return 3\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,4 +1,4 @@\n def consume(cb):\n     return 3\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "The callback is only an argument value; the consumer neither invokes nor stores it."
+    },
+    {
+      "id": "callback_return_ignored",
+      "kind": "fixture",
+      "app_source": "from lib import consume, danger\nconsume(danger)\n",
+      "library_files": {
+        "lib.py": "def consume(cb):\n    return cb\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,4 +1,4 @@\n def consume(cb):\n     return cb\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "The returned function is discarded. Passing and returning a function do not invoke it."
+    },
+    {
+      "id": "callback_return_invoked",
+      "kind": "fixture",
+      "app_source": "from lib import consume, danger\ncb = consume(danger)\ncb()\n",
+      "library_files": {
+        "lib.py": "def consume(cb):\n    return cb\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,4 +1,4 @@\n def consume(cb):\n     return cb\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "present",
+      "label_reason": "The returned callback is stored and then invoked by the caller."
+    },
+    {
+      "id": "callback_unknown_consumer",
+      "kind": "fixture",
+      "app_source": "from missing import consume\nfrom lib import danger\nconsume(danger)\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "undetermined",
+      "label_reason": "The missing consumer could invoke, store, or ignore its argument."
+    },
+    {
+      "id": "callback_unreachable_supply",
+      "kind": "fixture",
+      "app_source": "from lib import consume, safe\nconsume(safe)\n",
+      "library_files": {
+        "lib.py": "def consume(cb):\n    cb()\ndef safe():\n    return 1\ndef uncalled():\n    consume(danger)\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -5,4 +5,4 @@\n def uncalled():\n     consume(danger)\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "Only an uncalled dependency function supplies danger; the live caller supplies safe."
+    },
+    {
+      "id": "dynamic_attribute",
+      "kind": "fixture",
+      "app_source": "import lib\ndef run(name):\n    getattr(lib, name)()\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "undetermined",
+      "label_reason": "The runtime attribute name is unspecified."
+    },
+    {
+      "id": "property_getter",
+      "kind": "fixture",
+      "app_source": "from lib import Client\nvalue = Client().value\n",
+      "library_files": {
+        "lib.py": "class Client:\n    @property\n    def value(self):\n        return danger()\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -3,4 +3,4 @@\n     def value(self):\n         return danger()\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "present",
+      "label_reason": "Reading value on this exact instance invokes its property getter, which calls danger."
+    },
+    {
+      "id": "class_method_other",
+      "kind": "fixture",
+      "app_source": "from lib import Safe\nSafe().run()\n",
+      "library_files": {
+        "lib.py": "class Safe:\n    def run(self):\n        return 2\nclass Unsafe:\n    def run(self):\n        return danger()\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -5,4 +5,4 @@\n     def run(self):\n         return danger()\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "Only Safe is instantiated; the same-named Unsafe method is not a target of this call."
+    },
+    {
+      "id": "inherited_call",
+      "kind": "fixture",
+      "app_source": "from lib import Child\nChild().run()\n",
+      "library_files": {
+        "lib.py": "class Parent:\n    def run(self):\n        return danger()\nclass Child(Parent):\n    pass\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -4,4 +4,4 @@\n class Child(Parent):\n     pass\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "present",
+      "label_reason": "The exact Child receiver inherits Parent.run without an override."
+    },
+    {
+      "id": "module_data_read",
+      "kind": "fixture",
+      "app_source": "import lib\nvalue = lib.LIMIT\n",
+      "library_files": {
+        "lib.py": "LIMIT = 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1 +1 @@\n-LIMIT = 111\n+LIMIT = 112\n",
+      "target": "lib.LIMIT",
+      "truth": "present",
+      "label_reason": "Application reads the changed module binding."
+    },
+    {
+      "id": "module_data_unused",
+      "kind": "fixture",
+      "app_source": "import lib\n",
+      "library_files": {
+        "lib.py": "LIMIT = 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1 +1 @@\n-LIMIT = 111\n+LIMIT = 112\n",
+      "target": "lib.LIMIT",
+      "truth": "absent",
+      "label_reason": "Import initializes the constant; no expression obtains or uses its value."
+    },
+    {
+      "id": "late_declared_data",
+      "kind": "fixture",
+      "app_source": "from lib import run\nrun()\n",
+      "library_files": {
+        "lib.py": "def run():\n    return LIMIT\nLIMIT = 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,3 +1,3 @@\n def run():\n     return LIMIT\n-LIMIT = 111\n+LIMIT = 112\n",
+      "target": "lib.LIMIT",
+      "truth": "present",
+      "label_reason": "Module initialization completes before run is called, so its global read sees LIMIT."
+    },
+    {
+      "id": "shadowed_data",
+      "kind": "fixture",
+      "app_source": "from lib import run\nrun(1)\n",
+      "library_files": {
+        "lib.py": "LIMIT = 111\ndef run(LIMIT):\n    return LIMIT\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,3 +1,3 @@\n-LIMIT = 111\n+LIMIT = 112\n def run(LIMIT):\n     return LIMIT\n",
+      "target": "lib.LIMIT",
+      "truth": "absent",
+      "label_reason": "A function parameter shadows the module constant."
+    },
+    {
+      "id": "unrelated_escaped_callback",
+      "kind": "fixture",
+      "app_source": "from lib import keep, safe\nkeep(safe)\n",
+      "library_files": {
+        "lib.py": "def keep(cb):\n    return cb\ndef safe():\n    return 3\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -3,4 +3,4 @@\n def safe():\n     return 3\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "The only escaped callback has a complete body that cannot call danger."
+    },
+    {
+      "id": "escaped_hidden_dispatch",
+      "kind": "fixture",
+      "app_source": "from lib import keep, cb\nkeep(cb)\n",
+      "library_files": {
+        "lib.py": "def keep(cb):\n    return cb\ndef cb():\n    return mystery()\ndef danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -3,4 +3,4 @@\n def cb():\n     return mystery()\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "absent",
+      "label_reason": "keep returns the function and the caller discards it. Even though its body has an unresolved call, this callback is never invoked by the supplied program."
+    },
+    {
+      "id": "missing_wrapper_body",
+      "kind": "fixture",
+      "app_source": "from intermediary import run\nrun()\n",
+      "library_files": {
+        "lib.py": "def danger():\n    return 111\n"
+      },
+      "purl": "pkg:pypi/lib@1",
+      "diff": "diff --git a/lib.py b/lib.py\n--- a/lib.py\n+++ b/lib.py\n@@ -1,2 +1,2 @@\n def danger():\n-    return 111\n+    return 112\n",
+      "target": "lib.danger",
+      "truth": "undetermined",
+      "label_reason": "The absent intermediary could call the dependency."
+    },
+    {
+      "id": "real_requests_top_level",
+      "kind": "library",
+      "app_source": "import requests\nrequests.get('https://example.invalid')\n",
+      "library_path": "tests_local/requests",
+      "revision": "2ad18e0e10e7d7ecd5384c378f25ec8821a10a29",
+      "purl": "pkg:pypi/requests@2.30.0",
+      "cve": "CVE-2023-32681",
+      "references": [
+        "https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5",
+        "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+      ],
+      "target": "requests.sessions.SessionRedirectMixin.rebuild_proxies",
+      "truth": "present",
+      "label_reason": "Requests get calls request, Session.request/send and redirect handling; rebuild_proxies is a possible structural target.",
+      "source_evidence": [
+        {
+          "path": "requests/sessions.py",
+          "symbol": "SessionRedirectMixin.rebuild_proxies"
+        }
+      ]
+    },
+    {
+      "id": "real_requests_redirects_disabled",
+      "kind": "library",
+      "app_source": "import requests\nrequests.get('https://example.invalid', allow_redirects=False)\n",
+      "library_path": "tests_local/requests",
+      "revision": "2ad18e0e10e7d7ecd5384c378f25ec8821a10a29",
+      "purl": "pkg:pypi/requests@2.30.0",
+      "cve": "CVE-2023-32681",
+      "references": [
+        "https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5",
+        "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+      ],
+      "target": "requests.sessions.SessionRedirectMixin.rebuild_proxies",
+      "truth": "present",
+      "label_reason": "The structural call graph still contains redirect handling; this label deliberately does not assess argument-dependent execution or exploitability.",
+      "source_evidence": [
+        {
+          "path": "requests/sessions.py",
+          "symbol": "SessionRedirectMixin.rebuild_proxies"
+        }
+      ]
+    },
+    {
+      "id": "real_requests_dynamic",
+      "kind": "library",
+      "app_source": "import requests\ndef run(method):\n    getattr(requests, method)('https://example.invalid')\n",
+      "library_path": "tests_local/requests",
+      "revision": "2ad18e0e10e7d7ecd5384c378f25ec8821a10a29",
+      "purl": "pkg:pypi/requests@2.30.0",
+      "cve": "CVE-2023-32681",
+      "references": [
+        "https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5",
+        "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+      ],
+      "target": "requests.sessions.SessionRedirectMixin.rebuild_proxies",
+      "truth": "undetermined",
+      "label_reason": "The runtime method name is unspecified; no particular call is established.",
+      "source_evidence": [
+        {
+          "path": "requests/sessions.py",
+          "symbol": "SessionRedirectMixin.rebuild_proxies"
+        }
+      ]
+    },
+    {
+      "id": "real_requests_unused",
+      "kind": "library",
+      "app_source": "def run():\n    return 1\n",
+      "library_path": "tests_local/requests",
+      "revision": "2ad18e0e10e7d7ecd5384c378f25ec8821a10a29",
+      "purl": "pkg:pypi/requests@2.30.0",
+      "cve": "CVE-2023-32681",
+      "references": [
+        "https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5",
+        "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+      ],
+      "target": "requests.sessions.SessionRedirectMixin.rebuild_proxies",
+      "truth": "absent",
+      "label_reason": "There is no application reference to Requests.",
+      "source_evidence": [
+        {
+          "path": "requests/sessions.py",
+          "symbol": "SessionRedirectMixin.rebuild_proxies"
+        }
+      ]
+    },
+    {
+      "id": "real_werkzeug_alias",
+      "kind": "library",
+      "app_source": "from werkzeug.security import safe_join as join\ndef run(path):\n    return join('public', path)\n",
+      "library_path": "tests_local/werkzeug",
+      "revision": "3c2ba3da894c0767dd6dde7b2707cac65bad5422",
+      "purl": "pkg:pypi/werkzeug@2.3.7",
+      "cve": "CVE-2024-49766",
+      "references": [
+        "https://github.com/pallets/werkzeug/commit/2767bcb10a7dd1c297d812cc5e6d11a474c1f092",
+        "https://github.com/advisories/GHSA-f9vj-2wh5-fj8j"
+      ],
+      "target": "werkzeug.security.safe_join",
+      "truth": "present",
+      "label_reason": "The imported safe_join alias is called directly.",
+      "source_evidence": [
+        {
+          "path": "src/werkzeug/security.py",
+          "symbol": "safe_join"
+        }
+      ]
+    },
+    {
+      "id": "real_werkzeug_wrapper",
+      "kind": "library",
+      "app_source": "from werkzeug.utils import send_from_directory\ndef run(path):\n    return send_from_directory('public', path, {})\n",
+      "library_path": "tests_local/werkzeug",
+      "revision": "3c2ba3da894c0767dd6dde7b2707cac65bad5422",
+      "purl": "pkg:pypi/werkzeug@2.3.7",
+      "cve": "CVE-2024-49766",
+      "references": [
+        "https://github.com/pallets/werkzeug/commit/2767bcb10a7dd1c297d812cc5e6d11a474c1f092",
+        "https://github.com/advisories/GHSA-f9vj-2wh5-fj8j"
+      ],
+      "target": "werkzeug.security.safe_join",
+      "truth": "present",
+      "label_reason": "send_from_directory uses safe_join on the requested path in the pinned source.",
+      "source_evidence": [
+        {
+          "path": "src/werkzeug/security.py",
+          "symbol": "safe_join"
+        }
+      ]
+    },
+    {
+      "id": "real_werkzeug_same_name",
+      "kind": "library",
+      "app_source": "def safe_join(directory, path):\n    return directory\ndef run(path):\n    return safe_join('public', path)\n",
+      "library_path": "tests_local/werkzeug",
+      "revision": "3c2ba3da894c0767dd6dde7b2707cac65bad5422",
+      "purl": "pkg:pypi/werkzeug@2.3.7",
+      "cve": "CVE-2024-49766",
+      "references": [
+        "https://github.com/pallets/werkzeug/commit/2767bcb10a7dd1c297d812cc5e6d11a474c1f092",
+        "https://github.com/advisories/GHSA-f9vj-2wh5-fj8j"
+      ],
+      "target": "werkzeug.security.safe_join",
+      "truth": "absent",
+      "label_reason": "The application calls its own safe_join without importing Werkzeug.",
+      "source_evidence": [
+        {
+          "path": "src/werkzeug/security.py",
+          "symbol": "safe_join"
+        }
+      ]
+    },
+    {
+      "id": "real_werkzeug_dynamic",
+      "kind": "library",
+      "app_source": "import werkzeug.security\ndef run(name, path):\n    return getattr(werkzeug.security, name)('public', path)\n",
+      "library_path": "tests_local/werkzeug",
+      "revision": "3c2ba3da894c0767dd6dde7b2707cac65bad5422",
+      "purl": "pkg:pypi/werkzeug@2.3.7",
+      "cve": "CVE-2024-49766",
+      "references": [
+        "https://github.com/pallets/werkzeug/commit/2767bcb10a7dd1c297d812cc5e6d11a474c1f092",
+        "https://github.com/advisories/GHSA-f9vj-2wh5-fj8j"
+      ],
+      "target": "werkzeug.security.safe_join",
+      "truth": "undetermined",
+      "label_reason": "The runtime attribute name is unspecified.",
+      "source_evidence": [
+        {
+          "path": "src/werkzeug/security.py",
+          "symbol": "safe_join"
+        }
+      ]
+    },
+    {
+      "id": "app_whoogle_requests",
+      "kind": "application",
+      "project_path": "tests_local/real_apps/whoogle-search",
+      "revision": "5ae9160d380f7188a281b70b5665e51937e5f467",
+      "purl": "pkg:pypi/requests@2.28.2",
+      "cve": "CVE-2023-32681",
+      "references": [
+        "https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5",
+        "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+      ],
+      "target": "requests.sessions.SessionRedirectMixin.rebuild_proxies",
+      "truth": "present",
+      "label_reason": "Whoogle app.request and app.utils.bangs call requests.get; the pinned Requests API and Session methods structurally lead to redirect handling.",
+      "source_evidence": [
+        {
+          "path": "app/request.py",
+          "symbol": "requests.get call sites at lines 314 and 328"
+        },
+        {
+          "path": "app/utils/bangs.py",
+          "symbol": "requests.get at line 20"
+        }
+      ]
+    },
+    {
+      "id": "app_linkding_requests",
+      "kind": "application",
+      "project_path": "tests_local/real_apps/linkding",
+      "revision": "f071423f1e29f2781b9dc31c2ce8cfce9b8a5a50",
+      "purl": "pkg:pypi/requests@2.31.0",
+      "cve": "CVE-2024-35195",
+      "references": [
+        "https://github.com/psf/requests/commit/a58d7f2ffb4d00b46dca2d70a3932a0b37e22fac",
+        "https://github.com/psf/requests/security/advisories/GHSA-9wx4-h78v-vm56"
+      ],
+      "target": "requests.adapters.HTTPAdapter.send",
+      "truth": "present",
+      "label_reason": "load_favicon uses requests.get. Session mounts HTTPAdapter instances and sends through the adapter; this labels a structural call, not the advisory preconditions.",
+      "source_evidence": [
+        {
+          "path": "bookmarks/services/favicon_loader.py",
+          "symbol": "load_favicon, requests.get at line 80"
+        }
+      ]
+    }
+  ]
+}

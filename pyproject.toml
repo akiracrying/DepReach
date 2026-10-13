@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61", "setuptools-scm>=8", "wheel"]
+requires = ["setuptools>=77", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "depreach"
 dynamic = ["version"]
-description = "SCA with reachability — find out if vulnerable code is actually reachable"
+description = "Python SCA with explainable static call paths to patch-associated functions"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "appthreat-vulnerability-db>=6.6.0",
+    "appthreat-vulnerability-db>=6.6.1,<7",
     "apsw>=3.51",
     "oras>=0.1.30",
     "cyclonedx-bom>=5.0",
@@ -27,9 +27,9 @@ dependencies = [
     "rich>=13.0",
     "requests>=2.28",
     "packageurl-python>=0.15",
+    "packaging>=23",
     "custom-json-diff>=0.3",
     "pydantic>=2.0",
-    "SQLAlchemy>=2.0",
 ]
 
 [project.urls]
@@ -41,6 +41,7 @@ depreach = "depreach:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+node = ["tree-sitter>=0.25.2,<0.26", "tree-sitter-javascript>=0.25,<0.26", "tree-sitter-typescript>=0.23,<0.24"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,3 +54,6 @@ py-modules = ["depreach"]
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
 tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+)$"
+
+[tool.setuptools.package-data]
+scripts = ["vulnerability_models.json"]

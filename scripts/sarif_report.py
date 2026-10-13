@@ -4,16 +4,14 @@ so ASPM/Code Scanning can display it.
 """
 import json
 import os
+from pathlib import Path
+
+
+from scripts.reachability_result import reachability_status, reachability_value
 
 
 def _is_reachable(v):
-    r = v.get("reachability") or {}
-    if not isinstance(r, dict):
-        return False
-    for info in r.values():
-        if isinstance(info, dict) and info.get("is_reachable"):
-            return True
-    return False
+    return reachability_value(v.get("reachability"))
 
 
 def vulns_to_sarif(vulns: list, project_uri: str = None) -> dict:
@@ -39,9 +37,9 @@ def vulns_to_sarif(vulns: list, project_uri: str = None) -> dict:
         reachable = _is_reachable(v)
         loc_uri = project_uri or v.get("purl") or f"pkg:{v.get('package', 'unknown')}@{v.get('installed_version', '')}"
         if not loc_uri.startswith("file://") and not loc_uri.startswith("pkg:"):
-            loc_uri = "file:///" + os.path.abspath(loc_uri).replace("\\", "/")
+            loc_uri = Path(loc_uri).resolve().as_uri()
 
-        results.append({
+        entry = {
             "ruleId": rid,
             "ruleIndex": rule_id_to_index.get(rid, 0),
             "level": level,
@@ -53,24 +51,48 @@ def vulns_to_sarif(vulns: list, project_uri: str = None) -> dict:
             }],
             "properties": {
                 "isReachable": reachable,
+                "reachabilityStatus": reachability_status(v.get("reachability")),
+                "reachability": v.get("reachability"),
                 "package": v.get("package"),
                 "installed_version": v.get("installed_version"),
                 "severity": sev,
                 "score": v.get("score"),
                 "purl": v.get("purl"),
+                "component_refs": v.get("component_refs", []),
                 "cve": v.get("cve"),
                 "affected_version": v.get("affected_version"),
             },
-        })
+        }
+        report = v.get("reachability") or {}
+        paths = report.get("paths", []) if isinstance(report, dict) else []
+        if paths:
+            flows = []
+            for path in paths:
+                locations = []
+                for step in path:
+                    if step.get("file") and step.get("line"):
+                        locations.append({"location": {
+                            "message": {"text": step["symbol"] + (" [possible callback invocation]" if step.get("edge_kind") == "passed_callable_may_be_invoked" else "")},
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": Path(step["file"]).resolve().as_uri()},
+                                "region": {"startLine": step.get("call_line") or step["line"]},
+                            },
+                        }})
+                if locations:
+                    flows.append({"threadFlows": [{"locations": locations}]})
+            if flows:
+                entry["codeFlows"] = flows
+                entry["locations"] = [flows[0]["threadFlows"][0]["locations"][0]["location"]]
+        results.append(entry)
 
     return {
-        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
             "tool": {
                 "driver": {
                     "name": "DepReach",
-                    "informationUri": "https://github.com/DepReach/DepReach",
+                    "informationUri": "https://github.com/akiracrying/DepReach",
                     "rules": rules,
                 }
             },

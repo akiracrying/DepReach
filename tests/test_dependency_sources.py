@@ -62,10 +62,18 @@ def test_invalid_wheel_metadata_remains_unknown(tmp_path, monkeypatch, content, 
     assert info["metadata_failures"]
 
 
-def test_metadata_limits_and_foreign_native_wheel(tmp_path, monkeypatch):
-    wheel_service(monkeypatch, b"x" * 100)
+def test_metadata_size_limit(tmp_path, monkeypatch):
+    calls = wheel_service(monkeypatch, b"x" * 100)
     monkeypatch.setattr(metadata, "MAX_METADATA_BYTES", 50)
-    assert metadata.package_metadata("pkg:pypi/demo@1", tmp_path)["requires_dist"] is None
+    info = metadata.package_metadata("pkg:pypi/demo@1", tmp_path)
+    assert info["requires_dist"] is None
+    assert info["metadata_failures"][0]["error"] == "Wheel metadata exceeds size limit"
+    assert len(calls) == 3
+
+
+def test_foreign_native_wheel_is_not_downloaded(tmp_path, monkeypatch):
+    # Keep a separate cache from the size-limit case: on Linux the default
+    # environment equals this explicit target and would reuse its cached result.
     calls = wheel_service(monkeypatch, b"", filename="demo-1-cp310-cp310-win_amd64.whl")
     env = {"sys_platform": "linux", "os_name": "posix", "platform_system": "Linux"}
     info = metadata.package_metadata("pkg:pypi/demo@1", tmp_path, environment=env)

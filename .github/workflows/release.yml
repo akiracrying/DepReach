@@ -12,6 +12,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -20,8 +22,9 @@ jobs:
 
       - name: Install and run tests
         run: |
-          pip install -e ".[dev]"
-          pytest tests/ -v
+          pip install -e ".[dev,node]"
+          python -m pytest tests/ -v
+          python -m scripts.evaluate_corpus --offline --output reports/release-corpus --min-coverage 0.70
 
       - name: Install build
         run: pip install build
@@ -35,12 +38,14 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           pip install twine
+          twine check --strict dist/*
           twine upload dist/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          body_path: docs/releases/${{ github.ref_name }}.md
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

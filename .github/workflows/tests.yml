@@ -54,6 +54,12 @@ jobs:
                   "symbol": "fixture.function", "relative_path": "fixture.py", "whole_definition": True,
                   "code": 'def function(): return "<script>bad()</script>"', "provenance": "ui_fixture_only",
                   "excerpt_start_line": 1, "excerpt_end_line": 1, "file_sha256": "fixture"}}]}}]
+          findings[0]["reachability"]["module_lookup_summary"] = {"scope": "scan_wide_candidates",
+              "binding_resolution_scope": "direct_commonjs_require_identity_only",
+              "counts": {"by_status": {"resolved": 3}, "commonjs_bindings": {"verified_commonjs_wrapper": 3}},
+              "symbol_summary": {"counts": {"by_status": {"modeled_function_target": 1, "unresolved": 2}},
+                  "application_examples": [{"caller_file": "fixture.js", "caller_line": 1,
+                      "target_name": "<script>bad()</script>", "target_file": "dependency.js", "target_line": 2}]}}
           components = [{"name": "package" + str(i), "version": "1", "purl": "pkg:npm/package" + str(i) + "@1"} for i in range(180)]
           (output / "sbom.json").write_text(json.dumps({"components": components}), encoding="utf-8")
           (output / "findings.json").write_text(json.dumps(findings), encoding="utf-8")
@@ -78,12 +84,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: pip install -e '.[dev,node]'
-      - name: Compare captured module paths with Node without loading targets
+      - name: Check Node paths and authored scope/value oracles
         env:
           DEPREACH_REQUIRE_NODE_ORACLE: '1'
           DEPREACH_NODE_ORACLE_REPORT: reports/node-oracle.jsonl
           DEPREACH_NODE_BINDING_ORACLE_REPORT: reports/node-binding-oracle.jsonl
-        run: python -m pytest tests/test_node_resolution.py tests/test_node_imports.py tests/test_javascript_bindings.py -q
+        run: python -m pytest tests/test_node_resolution.py tests/test_node_imports.py tests/test_javascript_bindings.py tests/test_node_symbols.py -q
       - uses: actions/upload-artifact@v4
         if: always()
         with:

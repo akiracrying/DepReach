@@ -176,3 +176,103 @@ def test_cli_binding_gap_does_not_return_a_complete_audit_code(tmp_path):
     summary=json.loads((out/'summary.json').read_text(encoding='utf-8'))
     assert summary['candidate_lookup_complete'] and not summary['commonjs_binding_complete']
     assert records(summary)[0]['binding_evidence']['reason']=='direct_eval_may_change_bindings'
+
+
+def test_symbol_pipeline_adds_candidates_but_preserves_unsupported_sca(tmp_path,monkeypatch):
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();")
+    output=tmp_path/'out';output.mkdir()
+    summary=audit.audit_node_imports(inventory,sources,output/'modules',resolve_symbols=True)
+    assert summary['call_target_resolution_implemented'] and not summary['call_graph_implemented']
+    assert summary['symbol_summary']['counts']['by_status']['modeled_function_target']==1
+    values=[json.loads(line) for line in Path(summary['symbol_summary']['calls']).read_text(encoding='utf-8').splitlines()]
+    target=next(v for v in values if v['status']=='modeled_function_target')
+    assert target['target']['relative_file']=='index.js' and target['entrypoint_reachable'] is None
+    (output/'sbom.json').write_text(json.dumps(npm_inventory.npm_sbom({**inventory,'edges':[],'selection':{}})),encoding='utf-8')
+    import scripts.composition_analysis as composition
+    monkeypatch.setattr(composition,'check_vulnerabilities_from_sbom',lambda *a:[{'cve':'CVE-TEST','package':'dep','purl':'pkg:npm/dep@1.0.0'}])
+    findings=npm_inventory.scan_npm_inventory({**inventory,'selection':{}},output,sources,module_resolution=summary)
+    assert findings[0]['reachability']['status']=='unsupported'
+    assert findings[0]['reachability']['is_reachable'] is None
+    assert 'JS function target candidates' in (output/'report.html').read_text(encoding='utf-8')
+
+
+def test_symbol_output_cap_preserves_explicit_omissions(tmp_path,monkeypatch):
+    import scripts.node_symbols as symbols
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();lib.run();")
+    monkeypatch.setattr(symbols,'MAX_CALL_RECORDS',1)
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out',resolve_symbols=True)
+    s=summary['symbol_summary']
+    assert s['counts']['calls']==3 and s['counts']['omitted_records']==2
+    assert len(Path(s['calls']).read_text(encoding='utf-8').splitlines())==1
+    assert not summary['symbol_audit_complete']
+
+
+def test_symbol_analysis_uses_captured_dependency_bytes_after_disk_change(tmp_path,monkeypatch):
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();")
+    original=(app/'node_modules/dep/index.js').read_bytes()
+    parse=audit.parse_javascript
+    def mutate(path,raw):
+        (app/'node_modules/dep/index.js').write_text('exports.run=()=>2;',encoding='utf-8')
+        return parse(path,raw)
+    monkeypatch.setattr(audit,'parse_javascript',mutate)
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out',resolve_symbols=True)
+    values=[json.loads(line) for line in Path(summary['symbol_summary']['calls']).read_text(encoding='utf-8').splitlines()]
+    target=next(r['target'] for r in values if r['status']=='modeled_function_target')
+    assert target['module_source_sha256']==hashlib.sha256(original).hexdigest()
+    assert original[target['start_byte']:target['end_byte']].startswith(b'() =>')
+    assert target['source_sha256']==hashlib.sha256(original[target['start_byte']:target['end_byte']]).hexdigest()
+
+
+def test_npm_symbol_flag_implies_all_previous_source_stages(tmp_path,monkeypatch):
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();")
+    package={'name':'app','version':'1.0.0','dependencies':{'dep':'1.0.0'}}
+    (app/'package.json').write_text(json.dumps(package),encoding='utf-8')
+    (app/'package-lock.json').write_text(json.dumps({'lockfileVersion':3,'packages':{'':package,'node_modules/dep':{'version':'1.0.0'}}}),encoding='utf-8')
+    import scripts.npm_sources as source_module
+    def prepare(i,*a,**k): return {**sources,'inventory_sha256':i['input_sha256'],'metrics':{'instances':1}}
+    monkeypatch.setattr(source_module,'prepare_npm_sources',prepare)
+    out=app/'reports/symbol-run'
+    assert npm_inventory.main(['--input',str(app),'--output',str(out),'--resolve-symbols','--condition','development','--target-os','linux'])==0
+    saved=json.loads((out/'inventory.json').read_text(encoding='utf-8'))
+    summary=json.loads(Path(saved['module_resolution_manifest']).read_text(encoding='utf-8'))
+    assert summary['symbol_audit_complete'] and summary['symbol_summary']['counts']['by_status']['modeled_function_target']==1
+    assert 'development' in summary['conditions']
+    assert Path(saved['source_manifest']).is_file() and Path(saved['syntax_manifest']).is_file()
+
+
+def test_function_example_labels_are_escaped_in_html(tmp_path,monkeypatch):
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();")
+    out=tmp_path/'out';out.mkdir()
+    summary=audit.audit_node_imports(inventory,sources,out/'modules',resolve_symbols=True)
+    summary['symbol_summary']['application_examples'][0]['target_name']='<img src=x onerror=bad()>'
+    (out/'sbom.json').write_text(json.dumps(npm_inventory.npm_sbom({**inventory,'edges':[],'selection':{}})),encoding='utf-8')
+    import scripts.composition_analysis as composition
+    monkeypatch.setattr(composition,'check_vulnerabilities_from_sbom',lambda *a:[{'cve':'CVE-TEST','package':'dep','purl':'pkg:npm/dep@1.0.0'}])
+    npm_inventory.scan_npm_inventory({**inventory,'selection':{}},out,sources,module_resolution=summary)
+    html=(out/'report.html').read_text(encoding='utf-8')
+    assert '&lt;img src=x onerror=bad()&gt;' in html
+    assert '<code><img src=x onerror=bad()>' not in html
+
+
+def test_symbol_large_name_metadata_does_not_expand_unbounded_records(tmp_path):
+    app,inventory,sources=fixture(tmp_path,"const go=require('dep');go();")
+    (app/'node_modules/dep/index.js').write_text('module.exports=function '+('f'*10000)+'(){};',encoding='utf-8')
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out',resolve_symbols=True)
+    counts=summary['symbol_summary']['counts']
+    assert counts['by_status']['modeled_function_target']==1
+    assert counts['omitted_records']==1 and counts['omission_reasons']=={'call_record_text_limit':1}
+    assert Path(summary['symbol_summary']['calls']).stat().st_size<10000
+    assert not summary['symbol_audit_complete'] and not summary['symbol_summary']['application_examples']
+
+
+@pytest.mark.parametrize('setting,reason',[('MAX_CALL_RECORD_BYTES','call_record_byte_limit'),('MAX_CALL_OUTPUT_BYTES','call_output_byte_limit')])
+def test_symbol_output_byte_limits_are_explicit(tmp_path,monkeypatch,setting,reason):
+    import scripts.node_symbols as symbols
+    app,inventory,sources=fixture(tmp_path,"const lib=require('dep');lib.run();")
+    monkeypatch.setattr(symbols,setting,1)
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out',resolve_symbols=True)
+    counts=summary['symbol_summary']['counts']
+    assert counts['omitted_records']==counts['calls']==2
+    assert counts['omission_reasons']=={reason:2}
+    assert counts['output_bytes']==Path(summary['symbol_summary']['calls']).stat().st_size==0
+    assert not summary['symbol_audit_complete']

@@ -8,6 +8,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -50,6 +51,30 @@ def _text(node, raw):
     return raw[node.start_byte:node.end_byte].decode("utf-8") if node is not None else None
 
 
+IDENTIFIER_NODES = {"identifier", "property_identifier", "type_identifier", "statement_identifier",
+                    "shorthand_property_identifier", "shorthand_property_identifier_pattern"}
+IDENTIFIER_ESCAPE = re.compile(r"\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))")
+
+
+def _identifier_text(node, raw):
+    text = _text(node, raw)
+    if node is None or node.type not in IDENTIFIER_NODES or '\\' not in text:
+        return text
+    def decode(match):
+        digits = (match.group(1) or match.group(2)).lstrip("0") or "0"
+        if len(digits) > 6:
+            raise ValueError("Unsupported identifier escape")
+        codepoint = int(digits, 16)
+        if codepoint > 0x10ffff or 0xd800 <= codepoint <= 0xdfff:
+            raise ValueError("Unsupported identifier escape")
+        return chr(codepoint)
+    try:
+        value = IDENTIFIER_ESCAPE.sub(decode, text)
+    except ValueError:
+        return None
+    return None if '\\' in value else value
+
+
 def _display(node, raw, field):
     text = _text(node, raw)
     value = {field: text[:MAX_TEXT_EXCERPT] if text is not None else None}
@@ -77,19 +102,20 @@ def _dotted(node, raw):
     if node is None:
         return None
     if node.type in {"identifier", "property_identifier"}:
-        return _text(node, raw)
+        return _identifier_text(node, raw)
     if node.type == "member_expression":
         base = _dotted(node.child_by_field_name("object"), raw)
         prop = node.child_by_field_name("property")
         if base and prop is not None and prop.type == "property_identifier":
-            return base + "." + _text(prop, raw)
+            name = _identifier_text(prop, raw)
+            return base + "." + name if name is not None else None
     return None
 
 
 def _function_name(node, raw):
     name = node.child_by_field_name("name")
     if name is not None:
-        return _text(name, raw)
+        return _identifier_text(name, raw) or _text(name, raw)
     parent = node.parent
     if parent is not None:
         if parent.type == "variable_declarator":
@@ -100,7 +126,7 @@ def _function_name(node, raw):
             name = parent.child_by_field_name("left")
         elif parent.type == "export_statement":
             return "<default>"
-    return _text(name, raw) if name is not None else f"<anonymous@{node.start_point.row + 1}:{node.start_point.column}>"
+    return (_dotted(name, raw) or _identifier_text(name, raw) or _text(name, raw)) if name is not None else f"<anonymous@{node.start_point.row + 1}:{node.start_point.column}>"
 
 
 @dataclass
@@ -123,12 +149,14 @@ class JavaScriptSyntax:
             if count > MAX_NODES:
                 issues.append({"reason": "syntax_node_limit"})
                 break
+            if node.type in IDENTIFIER_NODES and _identifier_text(node, self.raw) is None:
+                issues.append({"reason": "identifier_escape_unsupported", **_span(node)})
             if node.type == "ERROR" or node.is_missing:
                 issues.append({"reason": "syntax_error", "node_type": node.type, **_span(node)})
             child_owner, child_prefix = owner, prefix
             if node.type in {"class_declaration", "class"}:
                 name = node.child_by_field_name("name")
-                child_prefix = prefix + (_text(name, self.raw) or f"<class@{node.start_byte}>") + "."
+                child_prefix = prefix + (_identifier_text(name, self.raw) or _text(name, self.raw) or f"<class@{node.start_byte}>") + "."
             if node.type in FUNCTIONS:
                 name = prefix + _function_name(node, self.raw)
                 symbol = f"{name}@{node.start_byte}"

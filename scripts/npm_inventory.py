@@ -249,7 +249,8 @@ def scan_npm_inventory(inventory, output_dir, source_context=None, *, module_res
                 "input_sha256": module_resolution["input_sha256"],
                 "binding_resolution_implemented": module_resolution.get("binding_resolution_implemented", False),
                 "binding_resolution_scope": module_resolution.get("binding_resolution_scope"),
-                "exported_value_resolution_implemented": False, "call_graph_implemented": False}
+                "exported_value_resolution_implemented": module_resolution.get("exported_value_resolution_implemented", False),
+                "symbol_summary": module_resolution.get("symbol_summary"), "call_graph_implemented": False}
     (output / "vulnerabilities.json").write_text(json.dumps(findings, indent=2), encoding="utf-8")
     write_sarif(findings, str(output / "vulnerabilities.sarif"), project_uri=inventory["root"])
     generate_html_report(inventory["project_name"], str(output / "sbom.json"),
@@ -267,12 +268,14 @@ def main(argv=None):
     parser.add_argument("--target-cpu")
     parser.add_argument("--scan", action="store_true", help="Query configured local VDB and export findings; JS/TS reachability remains unsupported")
     parser.add_argument("--resolve-imports", action="store_true", help="Audit Node module path candidates; implies --syntax and --sources, not call reachability")
+    parser.add_argument("--resolve-symbols", action="store_true", help="Audit stable function target candidates; implies --resolve-imports, not vulnerability reachability")
     parser.add_argument("--condition", action="append", default=[], help="Additional Node package export condition for --resolve-imports")
     parser.add_argument("--syntax", action="store_true", help="Extract JS/TS AST facts, including dependency sources; requires the node extra")
     parser.add_argument("--sources", action="store_true", help="Fetch and verify locked npm tarballs without installing packages")
     parser.add_argument("--source-cache", default="data/npm-archives")
     parser.add_argument("--jobs", type=int, default=6)
     args = parser.parse_args(argv)
+    args.resolve_imports = args.resolve_imports or args.resolve_symbols
     if args.jobs < 1:
         parser.error("jobs must be positive")
     if args.condition and not args.resolve_imports:
@@ -318,7 +321,7 @@ def main(argv=None):
     if args.resolve_imports:
         from scripts.node_imports import audit_node_imports
         try:
-            resolution_context = audit_node_imports(inventory, source_context, output / "module-resolution", conditions=args.condition)
+            resolution_context = audit_node_imports(inventory, source_context, output / "module-resolution", conditions=args.condition, resolve_symbols=args.resolve_symbols)
         except (ValueError, OSError, RuntimeError) as exc:
             parser.error("Node module lookup failed: " + str(exc))
         inventory["module_resolution_manifest"] = str((output / "module-resolution/summary.json").resolve())
@@ -326,6 +329,8 @@ def main(argv=None):
         (output / "sbom.json").write_text(json.dumps(npm_sbom(inventory), indent=2), encoding="utf-8")
         print("Node module candidates: " + json.dumps(resolution_context["counts"]["by_status"], sort_keys=True))
         print("CommonJS require identity: " + json.dumps(resolution_context["counts"]["commonjs_bindings"], sort_keys=True))
+        if resolution_context.get("symbol_summary"):
+            print("Function target candidates: " + json.dumps(resolution_context["symbol_summary"]["counts"]["by_status"], sort_keys=True))
     print(f"npm instances: {len(inventory['instances'])}; edges: {len(inventory['edges'])}; omitted: {len(inventory['omitted'])}; issues: {len(inventory['issues'])}")
     if args.scan:
         findings = scan_npm_inventory(inventory, output, source_context, module_resolution=resolution_context)
@@ -336,7 +341,7 @@ def main(argv=None):
     return 0 if (inventory["tree_complete"] and (source_context is None or source_context["complete"])
                  and (syntax_context is None or syntax_context["syntax_complete"])
                  and (resolution_context is None or (resolution_context["candidate_lookup_complete"]
-                     and resolution_context["commonjs_binding_complete"]))) else 3
+                     and resolution_context["commonjs_binding_complete"] and resolution_context.get("symbol_audit_complete", True)))) else 3
 
 
 if __name__ == "__main__":

@@ -28,6 +28,10 @@ def analyze(code, module_format="commonjs", suffix="cjs"):
 
 @pytest.mark.parametrize("code,expected", [
     ("require('0');", [V]),
+    (r"function f(r\u0065quire){require('0');}require('1');", [S,V]),
+    (r"function f(\u{72}equire){require('0');}", [S]),
+    (r"r\u0065quire('0');", [V]),
+    (r"r\u0065quire=other;require('0');", [U]),
     ("function f(require){require('0');} require('1');", [S,V]),
     ("function f(){require('0');var require;} require('1');", [S,V]),
     ("{ require('0'); let require; } require('1');", [S,V]),
@@ -90,6 +94,7 @@ def test_lexical_binding_and_mutation_boundaries(code, expected):
     ("for await(const x of list){}require('0');", "unsupported", U),
     ("async function f(){await other;}require('0');", "commonjs", V),
     ("const require=other;require('0');", "esm", S),
+    (r"const r\u0065quire=other;require('0');", "esm", S),
     ("class module{}require('0');", "esm", U),
     ("let __filename;require('0');", "esm", U),
     ("{let require; } require('0');", "commonjs", V),
@@ -135,6 +140,9 @@ def test_declaration_evidence_preserves_unicode_byte_offsets():
 
 
 ORACLE_CASES = [
+    r"function f(\u{00000000000072}equire){require('0');}f(()=>{});require('1');",
+    r"function f(r\u0065quire){require('0');}f(()=>{});require('1');",
+    r"function f(\u{72}equire){require('0');}f(()=>{});require('1');",
     "require('0');",
     "function f(require){require('0');} f(()=>{});require('1');",
     "for(let require of [()=>{}]){require('0');} require('1');",
@@ -213,7 +221,7 @@ def test_default_javascript_profile_matches_node_for_authored_syntax_fixtures(tm
         "require('node:fs');", "import('node:fs');", "export const x=1;", "import 'node:fs';",
         "const meta=import.meta;", "await Promise.resolve();",
         "async function f(){await 1;}", "const require=()=>{};", "class module{}",
-        "let __filename;", "{let require;}"
+        "let __filename;", "{let require;}", r"const r\u0065quire=()=>{};"
     ]
     probe=";console.log(JSON.stringify({commonjs:typeof module==='object' && module!==null && typeof module.id==='string'}));"
     (tmp_path/'package.json').write_text('{}',encoding='utf-8')

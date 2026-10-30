@@ -6,7 +6,7 @@ and captured bytes as the syntax audit are used; target code is never executed.
 """
 from dataclasses import dataclass, field
 
-from scripts.javascript_syntax import FUNCTIONS, MAX_NODES, _span, _text
+from scripts.javascript_syntax import FUNCTIONS, MAX_NODES, _identifier_text, _span, _text
 
 WRAPPER_NAMES = {"require", "module", "exports", "__dirname", "__filename"}
 BLOCKS = {"statement_block", "switch_body", "for_statement", "for_in_statement", "catch_clause"}
@@ -62,7 +62,7 @@ class JavaScriptBindings:
         if self.complete: self._collect_writes()
 
     def _name(self, node):
-        return _text(node, self.syntax.raw)
+        return _identifier_text(node, self.syntax.raw) or _text(node, self.syntax.raw)
 
     def _declare(self, scope, node, kind, initialized=False):
         if node is None: return

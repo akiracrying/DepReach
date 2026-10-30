@@ -430,3 +430,91 @@ new binding module and optional API modules match the source bytes; a separate
 Python process imported and exercised the new module from the wheel, with
 normal installed dependencies. The sdist includes both new binding tests and
 the synthetic Node helper. This development artifact is not a published release.
+
+
+## Stable JavaScript value/function target checkpoint, 2026-10-30
+
+- Added --resolve-symbols to npm and standalone module audit, implying the
+  previous source/syntax/lookup stages. A bounded value IR reuses the same
+  captured tree: stable lexical functions/aliases, literal properties/object
+  destructuring, supported CJS default/named/forwarded exports and assignment
+  chains, ESM named/default/namespace imports, explicit re-exports and star
+  ambiguity. CJS function identity and mutable properties are distinct.
+- A record requires a syntactic call/new expression. Passing/storing functions
+  adds no invocation; generator calls are creation of iterators; async and
+  nonconstructible functions are not ordinary constructors. Installation context,
+  lexical owner, exact definition span/hash and bounded binding/export trace
+  remain explicit. Entrypoint/vulnerability reachability are null, not false.
+- Writes, aliases/object escapes, destructuring/loop/delete mutation, dynamic
+  keys, eval and wrapper arguments, conditional/delayed export changes, unsafe
+  initialization/cycles, native/data/compiler targets and unresolved value/return
+  flow retain explicit reasons. Resource/evidence omissions are visible. This
+  partial model does not establish arbitrary receiver/heap/loader effects or
+  runtime loadability; its assumptions are recorded.
+- JSONL and summary retain candidates separately from the SCA verdict. The
+  default-closed HTML card shows counts plus up to eight caller/definition
+  examples from application files; escaping and disclosure toggles are covered.
+  Global function candidates are not inserted into AI review's per-finding
+  evidence allowlist, nor used to invent a CVE-specific path.
+- 592 tests passed, one Windows symlink privilege skip. Node 22.19.0/24.22.1
+  checked 23 authored CJS/ESM module-value cases by comparing actual selected
+  function toString SHA256 with captured definition bytes, in addition to the
+  expanded 18 scope / 24 profile fixtures and non-loading path oracle. Only
+  authored test programs execute: the value oracle loads fixture initializers
+  without invoking selected function bodies; the scope oracle executes its
+  authored scope programs. Real application/dependency code never runs. CI retains oracle artifacts.
+- The full new CLI ran on clean NodeGoat
+  c5cb68a7084e4ae7dcc60e6a98768720a81841e8 with the existing local VDB: 396
+  verified source instances, 345 archive-cache hits, zero source/parse issues.
+  68,486 call/new records across 1,763 contexts / 1,680 physical modules:
+  12,236 modeled function targets, 6,432 built-ins, 49,818 unresolved, no record
+  omissions or incomplete IR modules. Application-owned files have 559 modeled
+  targets, including actual UserDAO and DAO/handler constructor links. Public
+  browser assets are within this file scope; these are not server entrypaths.
+- Every modeled target's full-module hash, exact byte span/function SHA256 and
+  LF line were independently checked against source bytes: 12,236 records,
+  3,974 distinct contextual definitions, 942 physical files. This verifies
+  provenance, not vulnerability-specific mapping or runtime execution.
+- Fresh full-pipeline and reused sources yielded identical captures, input
+  fingerprints, counts and call-record bytes. Artifacts:
+  reports/nodegoat-symbols-v4 and reports/nodegoat-full-symbol-scan-v4. The full
+  scan still emits 47 package/advisory findings, all unsupported for JS
+  reachability; exit 3 remains expected. The 20-case Python corpus is unchanged
+  (seven positives, ten negatives, three expected unknown; zero wrong results).
+
+Next establish entrypoints/contextual call paths and receiver/return/callback
+flow, then immutable exact-version vulnerability target maps. All ten original
+analysis requirements remain open; live provider calls and visual viewport
+review remain outstanding. This checkpoint is not completed JS reachability.
+
+Packaging: the development wheel/sdist in reports/node-symbols-build-20261030-03
+passed strict metadata checks. New modules match source bytes, the sdist contains
+the authored value oracle/tests, and a separate process exercised value-to-call
+resolution from the wheel. Base Python CLI --help also works with native parser
+imports disabled. The complete 47-finding report and updated CI fixture passed
+DOM behavior checks with/without local D3, including closed/escaped function
+examples. No new PyPI/GitHub release is claimed for this source checkpoint.
+
+The value-target follow-up also exposed a prior loader-identity bug: an encoded
+parameter r\u0065quire was treated as a different name from require, producing
+a false verified wrapper binding. Canonical JavaScript identifier decoding now
+covers lexical names, direct/dotted references and function labels while
+preserving raw source bytes/spans. Surrogate/out-of-range escapes are incomplete.
+Both fixed-width and code-point forms are checked against Node; new value
+fixtures compare escaped CJS/ESM function definitions with their actual source
+identity. Historical pre-fix artifacts retain their engine digests.
+
+Output follow-up: modeled calls now have separate count, metadata-character,
+encoded-record and whole-file byte budgets, with explicit omission reasons,
+incomplete coverage and an actual HTML notice. Very long function names cannot
+be repeated into unbounded serialized call records. Examples come only from
+emitted records and bound displayed strings. LF output keeps the byte accounting
+exact on Windows as well as Linux. Unicode code-point escapes permit leading
+zeros without converting arbitrarily long hexadecimal integers.
+
+ESM-name follow-up: an empty export alias is a real export name, not a missing
+alias. Unsupported escaped string aliases do not fall back to the original
+local name, and string namespace names use their value rather than quoted
+source text. Node function-identity fixtures verify supported empty/string
+exports; negative cases prevent borrowing a function that is not exported under
+the requested name.

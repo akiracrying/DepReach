@@ -17,8 +17,9 @@ implementation order, not a completion claim.
   local. Reproduction commands and pinned revisions are in REAL_APPS.md,
   EVALUATION.md and NPM.md.
 
-Latest working-tree checkpoint (2026-10-30): 500 tests passed with one Windows
-symlink skip; direct CommonJS require identity is checked. Detailed scope and
+Latest working-tree checkpoint (2026-10-30): 592 tests passed with one Windows
+symlink skip; direct CommonJS require identity and optional stable function
+target candidates are checked. Detailed scope and
 real-application evidence are in IMPLEMENTATION_STATUS.md and NPM.md.
 
 ## Priorities and acceptance criteria
@@ -47,8 +48,9 @@ real-application evidence are in IMPLEMENTATION_STATUS.md and NPM.md.
 8. **Implement JS/TS reachability end to end.** Candidate module lookup is now
    connected to npm CLI and tested against Node for declared 22/24 default
    cases. Direct CommonJS require identity now has lexical scope checks.
-   Next resolve ESM and CommonJS value bindings, exported values and call paths
-   before mapping immutable fixes. Preserve contextual installation
+   Optional --resolve-symbols now resolves supported stable CJS/ESM values and
+   function target candidates. Next establish entrypoints and contextual call
+   paths, receiver/return/callback flow, then immutable vulnerability fix maps. Preserve contextual installation
    identity, shadowed require/exports, returned values and callbacks. Native,
    compiler and unsupported loader boundaries remain explicit; npm findings
    still have unsupported reachability. See NPM.md for current scope.

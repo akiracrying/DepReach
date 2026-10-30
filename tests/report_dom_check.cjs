@@ -50,6 +50,15 @@ async function check(withGraph) {
     excerpt.querySelector('summary').click();
     assert(!excerpt.open);
   }
+  const symbolCard = [...d.querySelectorAll('details.card')].find(card => card.querySelector('summary')?.textContent.startsWith('JS function target candidates'));
+  if (symbolCard) {
+    assert(!symbolCard.open);
+    assert.equal(symbolCard.querySelectorAll('script, img').length, 0);
+    assert(symbolCard.querySelectorAll('li').length <= 8);
+    assert(symbolCard.textContent.includes('Entrypoint paths'));
+    symbolCard.querySelector('summary').click(); assert(symbolCard.open);
+    symbolCard.querySelector('summary').click(); assert(!symbolCard.open);
+  }
   const status = rows[0].dataset.status;
   d.querySelector('[data-filter-state="'+status+'"]').click();
   assert.equal(visible().length, rows.filter(r => r.dataset.status === status).length);

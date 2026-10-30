@@ -26,13 +26,13 @@ def _in_scope(relative, include_tests):
     return True
 
 
-def audit_node_imports(inventory, source_context, output_dir, *, conditions=(), include_tests=False):
+def audit_node_imports(inventory, source_context, output_dir, *, conditions=(), include_tests=False, resolve_symbols=False):
     resolver = NodeResolver(inventory, source_context, conditions=conditions)
     destination = Path(output_dir).resolve()
     destination.mkdir(parents=True, exist_ok=False)
     records_path = destination / 'imports.jsonl'
     modules, issues, counts, reasons = [], [], Counter(), Counter()
-    parsed, module_seen = {}, set()
+    parsed, module_seen, symbol_templates = {}, set(), {}
     omitted_modules = omitted_records = total_records = 0
     binding_counts, binding_reasons = Counter(), Counter()
     with records_path.open('x', encoding='utf-8') as output:
@@ -71,6 +71,9 @@ def audit_node_imports(inventory, source_context, output_dir, *, conditions=(), 
                         if ref['kind'] == 'commonjs_candidate':
                             ref['_bindings'] = {profile:bindings.commonjs_reference(ref, profile)
                                 for profile in ('commonjs','esm','javascript_auto','unsupported')}
+                    if resolve_symbols:
+                        from scripts.javascript_values import ModuleValues
+                        symbol_templates[key] = ModuleValues(syntax, bindings, facts).ir()
                     # Retain compact results, not trees/scopes for the entire source tree.
                     profiles = {profile:bindings.module_profile(profile) for profile in ('commonjs','esm','javascript_auto','unsupported')}
                     del bindings, syntax
@@ -125,13 +128,13 @@ def audit_node_imports(inventory, source_context, output_dir, *, conditions=(), 
                 for loc,path in sorted(resolver.roots.items()) for relative,keys in resolver.templates[path]['warnings'].items()]
     captures = [{'instance':loc,'sha256':resolver.templates[path]['sha256']} for loc,path in sorted(resolver.roots.items())]
     engine = hashlib.sha256()
-    for name in ('node_imports.py','node_resolution.py','javascript_syntax.py','javascript_bindings.py'):
+    for name in ('node_imports.py','node_resolution.py','javascript_syntax.py','javascript_bindings.py','javascript_values.py','node_symbols.py'):
         engine.update(name.encode()+b'\0'+Path(__file__).with_name(name).read_bytes().replace(b'\r\n',b'\n')+b'\0')
     parser_versions = {name:importlib.metadata.version(name) for name in ('tree-sitter','tree-sitter-javascript','tree-sitter-typescript')}
     fingerprint = hashlib.sha256(json.dumps([inventory.get('input_sha256'),captures,engine.hexdigest(),parser_versions,
-        sorted(resolver.conditions),resolver.target_os,include_tests,'node-imports-v2'],sort_keys=True).encode()).hexdigest()
+        sorted(resolver.conditions),resolver.target_os,include_tests,resolve_symbols,'node-imports-v3'],sort_keys=True).encode()).hexdigest()
     complete = not issues and not (counts['unresolved'] or counts['unsupported']) and source_context.get('complete',False) and inventory.get('tree_complete',True)
-    summary = {'schema_version':1,'analyzer_version':'node-imports-v2','profile':'node22_24_default',
+    summary = {'schema_version':1,'analyzer_version':'node-imports-v3','profile':'node22_24_default',
         'engine_source_sha256':engine.hexdigest(),'parser_versions':parser_versions,
         'target_os':resolver.target_os,'conditions':sorted(resolver.conditions),'input_sha256':fingerprint,
         'source_captures':captures, 'sources_complete':source_context.get('complete',False),
@@ -153,6 +156,19 @@ def audit_node_imports(inventory, source_context, output_dir, *, conditions=(), 
                   'shadowed_commonjs_candidates':binding_counts['shadowed_commonjs_identifier'],
                   'unverified_commonjs_candidates':binding_counts['unresolved_commonjs_binding'],
                   'omitted_modules':omitted_modules,'omitted_records':omitted_records}}
+    if resolve_symbols:
+        from scripts.node_symbols import audit_node_symbols
+        symbols = audit_node_symbols(resolver, modules, symbol_templates, destination/'symbols', provenance={
+            'input_sha256':fingerprint, 'engine_source_sha256':engine.hexdigest(),
+            'module_manifest':str((destination/'summary.json').resolve())})
+        summary['symbol_manifest'] = str((destination/'symbols/summary.json').resolve())
+        summary['symbol_summary'] = symbols
+        summary['exported_value_resolution_implemented'] = True
+        summary['exported_value_resolution_scope'] = 'stable_value_candidates'
+        summary['call_target_resolution_implemented'] = True
+        summary['symbol_audit_complete'] = complete and summary['commonjs_binding_complete'] and not (
+            symbols['counts']['by_status'].get('unresolved') or symbols['counts']['omitted_records']
+            or symbols['counts']['incomplete_value_modules'])
     (destination/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
     return summary
 
@@ -164,16 +180,18 @@ def main(argv=None):
     parser.add_argument('--output',required=True,help='New directory for imports.jsonl and summary.json')
     parser.add_argument('--condition',action='append',default=[])
     parser.add_argument('--include-tests',action='store_true')
+    parser.add_argument('--resolve-symbols',action='store_true',help='Also audit stable function target candidates; no vulnerability verdicts')
     args=parser.parse_args(argv)
     try:
         inventory=json.loads(Path(args.inventory).read_text(encoding='utf-8'))
         sources=json.loads(Path(args.sources).read_text(encoding='utf-8'))
-        summary=audit_node_imports(inventory,sources,args.output,conditions=args.condition,include_tests=args.include_tests)
+        summary=audit_node_imports(inventory,sources,args.output,conditions=args.condition,include_tests=args.include_tests,resolve_symbols=args.resolve_symbols)
     except (ValueError,OSError,RuntimeError) as exc:
         parser.error(str(exc))
     print(json.dumps(summary['counts'],indent=2))
-    print('Module lookup and direct require identity only; exported values, call paths and JS/TS reachability remain unsupported.')
-    return 0 if summary['candidate_lookup_complete'] and summary['commonjs_binding_complete'] else 3
+    if summary.get('symbol_summary'): print(json.dumps(summary['symbol_summary']['counts'],indent=2))
+    print('Module/value target candidates only; entrypoint paths and JS/TS vulnerability reachability remain unsupported.')
+    return 0 if summary['candidate_lookup_complete'] and summary['commonjs_binding_complete'] and summary.get('symbol_audit_complete',True) else 3
 
 
 if __name__=='__main__':

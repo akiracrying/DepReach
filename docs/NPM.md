@@ -293,10 +293,125 @@ Synthetic tests compare authored scope fixtures with Node's vm.compileFunction
 using an injected sentinel require; only those test strings execute. The normal
 resolution oracle continues to avoid loading any target module. Both independent
 checks run in required Node 22/24 CI jobs. Separate retained artifacts contain
-15 scope fixtures and 22 default-module-profile comparisons per runtime.
+18 scope fixtures and 24 default-module-profile comparisons per runtime.
 
 Next: resolve ESM named/default/namespace imports and re-exports; model CommonJS
 module.exports/exports values and their aliasing/mutations/cycles; then connect
 actual call expressions and immutable fix-to-symbol mappings. Require aliases,
 module.require/createRequire, callbacks, receiver/object flow and custom loaders
 remain explicit future work.
+
+
+## Stable value/function target audit
+
+The current checkout adds --resolve-symbols. The npm command implies
+--resolve-imports, --sources and --syntax. The standalone module audit accepts
+the same flag with previously verified source/inventory manifests. This is not
+in the published 0.2.0 package. Install from the current source checkout.
+
+```powershell
+.\venv\Scripts\python.exe -m scripts.node_imports `
+  --inventory reports/nodegoat-resolution-scan-v1/inventory.json `
+  --sources reports/nodegoat-resolution-scan-v1/dependency-sources.json `
+  --output reports/nodegoat-my-symbols --resolve-symbols
+
+# Full pipeline with a fresh output directory and the existing configured VDB:
+.\venv\Scripts\python.exe -m scripts.npm_inventory `
+  --input tests_local/real_apps/NodeGoat --output reports/nodegoat-my-full-symbols `
+  --omit-dev --target-os linux --target-cpu x64 --resolve-symbols --scan
+```
+
+The new symbols/calls.jsonl records call/new expressions, their lexical owner,
+importer instance/source hash, a candidate function's exact source span/hash
+and defining module/PURL, plus a bounded explanation of value/binding/export
+steps. Only an actual call/new expression creates a record: passing or storing
+a function alone does not establish invocation. Calls inside unused functions
+still appear and have entrypoint_reachable and vulnerability_reachable null.
+The summary and HTML keep these scan-wide candidates separate from CVE status.
+The HTML candidate card is closed by default and shows up to eight application
+examples with caller/definition locations.
+
+Modeled cases include stable lexical function declarations and aliases; direct
+CommonJS default/named values, object exports, simple export assignment chains
+and forwarding; object destructuring and literal property selection; ESM named,
+default and namespace imports, explicit re-exports and star export ambiguity.
+ESM default imports from CJS are supported; named CJS import heuristics and
+require-of-ESM namespace interop remain unmodeled. Installation contexts remain
+distinct even when source artifacts share one parse.
+
+CJS exports and module.exports start as aliases of one object; replacing one
+reference does not update the other. A function's identity is distinct from its
+mutable properties. Property modifications can make its properties unknown
+while leaving its direct call target intact; replacing module.exports, escaping
+the module object, eval or wrapper arguments exposure also blocks that identity.
+Conditional/delayed writes, computed keys, destructured/member assignments,
+for-in/of writes and delete do not borrow an earlier static target. Object
+arguments/aliases and known cross-module object mutations retain shape taint.
+
+This remains a partial model with explicit default-loader and stable-value
+assumptions. In particular receiver/heap side effects, custom loaders/cache
+modifications, returned values/instances, callback forwarding, framework
+registration and full initialization order are not modeled. A function target
+is not runtime execution or loadability proof. Inter-module initialization
+cycles that affect a query are unresolved, not traversed as completed exports.
+Generator calls are iterator creation, not evidence of executing their bodies;
+nonconstructible/async functions are not treated as ordinary constructors.
+
+The audit uses captured bytes for syntax and value lowering and releases the
+full tree/scope tables after each physical parse. Engine sources, parser/profile
+and the resolve-symbols selection enter its input fingerprint. Value depth and
+step budgets, property/record limits and evidence-trace omissions are explicit.
+The standalone/npm audit returns 3 for unresolved symbol coverage or omissions.
+SCA findings continue to have unsupported JS reachability even when some function
+targets resolve. No absence of a path or vulnerability verdict is inferred.
+
+Independent Node fixture checks compare selected function identity using the
+exact SHA256 of Function.prototype.toString output against captured definition
+bytes. Only authored fixture module initializers load; selected function bodies
+and captured real application/dependency modules are not executed. Node 22/24
+jobs retain those comparisons alongside the previous scope/profile oracles.
+
+Next: establish application entrypoints and contextual function-call paths,
+propagate receiver/instance/return/callback flow and scope missing edges to the
+relevant target; map immutable fixes to exact-version vulnerability targets
+before producing JS vulnerability reachability verdicts.
+
+Real NodeGoat checkpoint (reports/nodegoat-full-symbol-scan-v4): the complete
+CLI used the local VDB and all 345 cached archives, verifying 396/396 source
+instances without executing the application or dependencies. Across 1,680
+physical files / 1,763 installation contexts, 68,486 call/new expressions yielded
+12,236 modeled function targets, 6,432 built-in targets and 49,818 unresolved.
+There are 559 modeled function targets in the application-owned files, including
+constructor links from allocations/contributions modules to UserDAO. This scope
+includes browser asset files under the requested root; it is not a server
+entrypoint selection or ecosystem-wide precision estimate.
+
+The standalone and freshly extracted full-pipeline sources produced identical
+source captures, input fingerprints, counts and calls.jsonl bytes. Independently
+checking every modeled function record against source bytes verified 12,236
+records / 3,974 contextual function definitions in 942 physical files. This
+checks provenance and spans, not runtime execution or vulnerability mapping.
+Evidence: reports/nodegoat-symbols-v4/function-byte-validation.json and
+reports/nodegoat-full-symbol-scan-v4/validation.json. All 47 package/advisory
+findings remain unsupported for JS reachability; exit 3 is expected.
+
+Identifier names now decode valid JavaScript Unicode escapes before lexical
+lookup: r\u0065quire and require have the same binding identity. The spelling
+in source bytes/spans is retained. Unsupported surrogate/out-of-range escapes
+make syntax incomplete. This prevents an encoded parameter or root lexical
+declaration from being mistaken for an unshadowed CommonJS loader. Node scope,
+module-profile and exported-function identity fixtures exercise these cases.
+
+Function-call output limits: 100,000 records, 16,384 metadata characters per
+record, 64 KiB encoded per record and 128 MiB per JSONL file. Count/text/byte
+omissions have separate counters, make symbol coverage incomplete and are shown
+in HTML when present. Application examples are selected only from emitted
+records and limit each display string to 512 characters with a truncation flag.
+JSONL uses explicit UTF-8/LF so the byte budget equals the actual output size.
+
+ESM export names preserve the distinction between a missing alias and an empty
+string alias. String namespace export names are interpreted as names, not as
+quoted source text. Unsupported escaped string aliases remain unresolved and
+do not expose the original local name. Native Node function-identity fixtures
+cover supported empty/string aliases; they complement Unicode identifier
+decoding, which is separate from general JavaScript string-literal decoding.

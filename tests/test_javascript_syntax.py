@@ -143,3 +143,28 @@ def test_long_expression_text_is_bounded_without_losing_source_ranges():
     assert argument["text_truncated"]
     assert argument["end_byte"] - argument["start_byte"] == 5002
     assert report["source_sha256"] == hashlib.sha256(source.encode()).hexdigest()
+
+
+def test_unicode_identifier_escapes_use_semantic_names_and_keep_original_spans():
+    source = r"const r\u0075n=()=>1; exports.r\u0075n=r\u0075n; r\u0065quire('dep');"
+    report = facts(source)
+    assert report['parse_complete']
+    assert report['functions'][0]['qualified_name']=='run'
+    assert report['exports'][0]['target']=='exports.run'
+    assert report['imports'][0]['specifier']=='dep'
+    call=report['calls'][0]
+    assert call['target_name']=='require' and call['target_text']==r'r\u0065quire'
+    function=report['functions'][0]
+    assert function['source_sha256']==hashlib.sha256(source.encode()[function['start_byte']:function['end_byte']]).hexdigest()
+
+
+@pytest.mark.parametrize('source',[r'const \uD800 = 1;',r'function \u{110000}(){}'])
+def test_invalid_identifier_escapes_are_incomplete_instead_of_aliases(source):
+    report=facts(source)
+    assert not report['parse_complete']
+    assert any(i['reason'] in {'syntax_error','identifier_escape_unsupported'} for i in report['issues'])
+
+
+def test_identifier_code_point_escapes_allow_leading_zeros():
+    report=facts(r"\u{00000000000072}equire('dep');")
+    assert report['parse_complete'] and report['imports'][0]['specifier']=='dep'

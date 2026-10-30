@@ -222,9 +222,28 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
                               "unresolved_commonjs_binding": "Require binding unresolved"}
             labels = " | ".join(html_lib.escape(binding_labels.get(key, key) + ": " + str(value))
                                 for key, value in sorted(binding_counts.items()))
-            module_lookup_html += '<p>' + labels + '</p><p>Only direct CommonJS loader identity is checked. Exported values, call paths and vulnerability reachability are pending.</p></details>'
+            explanation = 'Direct CommonJS loader identity is checked. The optional function-target audit below covers stable value candidates; vulnerability reachability is pending.' if module_lookup.get("symbol_summary") else 'Only direct CommonJS loader identity is checked. Exported values, call paths and vulnerability reachability are pending.'
+            module_lookup_html += '<p>' + labels + '</p><p>' + explanation + '</p></details>'
         else:
             module_lookup_html += '<p>CommonJS bindings are unverified. Call-graph construction and vulnerability reachability are pending.</p></details>'
+    if isinstance(module_lookup, dict) and isinstance(module_lookup.get("symbol_summary"), dict):
+        symbols = module_lookup["symbol_summary"]
+        call_counts = symbols.get("counts", {}).get("by_status", {})
+        labels = " | ".join(html_lib.escape(str(key) + ": " + str(value)) for key, value in sorted(call_counts.items()))
+        module_lookup_html += '<details class="card"><summary>JS function target candidates | scan-wide analysis</summary><p>' + labels + '</p><p>Stable local/imported values only. These are function targets of call expressions, including calls inside unused functions. Entrypoint paths, receiver/callback flow and vulnerability mapping are pending.</p>'
+        omitted_calls = symbols.get("counts", {}).get("omitted_records", 0)
+        if omitted_calls:
+            module_lookup_html += '<p>' + html_lib.escape(str(omitted_calls)) + ' call records were omitted by output limits; coverage is incomplete. See the symbol summary for reasons.</p>'
+        examples = symbols.get("application_examples", [])[:8]
+        if examples:
+            module_lookup_html += '<p>Application examples (candidates, not CVE paths):</p><ul>'
+            for example in examples:
+                caller = html_lib.escape(str(example.get("caller_file")) + ":" + str(example.get("caller_line")))
+                target = html_lib.escape(str(example.get("target_name")))
+                location = html_lib.escape(str(example.get("target_instance") or "application") + "/" + str(example.get("target_file")) + ":" + str(example.get("target_line")))
+                module_lookup_html += '<li style="overflow-wrap:anywhere"><code>' + caller + '</code> → <code>' + target + '</code><br><small>' + location + '</small></li>'
+            module_lookup_html += '</ul>'
+        module_lookup_html += '</details>'
     project_name = html_lib.escape(project_name)
     html = f"""<!DOCTYPE html>
 <html lang="en">

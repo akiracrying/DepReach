@@ -217,7 +217,10 @@ def test_workspace_symlink_matches_node_realpath_lookup(tmp_path):
     alias=tmp_path/'node_modules/work'
     alias.parent.mkdir(parents=True,exist_ok=True)
     try: alias.symlink_to(tmp_path/'packages/work',target_is_directory=True)
-    except OSError: pytest.skip('Directory symlink requires privileges on this host; Linux CI exercises this case')
+    except OSError as exc:
+        if os.name != 'nt' and os.environ.get('DEPREACH_REQUIRE_NODE_ORACLE'):
+            pytest.fail('Required workspace symlink oracle unavailable: '+str(exc))
+        pytest.skip('Directory symlink requires privileges on this host; Linux CI exercises this case')
     f.instances.append({**work,'location':'node_modules/work','source_location':'packages/work','source_kind':'workspace'})
     f.sources.append({'location':'node_modules/work','purl':work['purl'],'source':str(tmp_path/'packages/work')})
     f.package('packages/node_modules/dep',version='2.0.0')
@@ -309,3 +312,11 @@ def test_missing_workspace_realpath_is_not_resolved_like_a_registry_copy(tmp_pat
     f.instances[0].update(source_location='packages/work',source_kind='workspace')
     value=f.resolver().resolve('node_modules/work','index.js','dep')
     assert value['status']=='unsupported' and value['reason']=='workspace_realpath_source_unavailable'
+
+
+@pytest.mark.parametrize('encoding',['utf-16','utf-8-sig'])
+def test_package_json_encoding_matches_node(tmp_path,encoding):
+    f=Fixture(tmp_path);f.package('node_modules/dep')
+    raw=json.dumps({'name':'dep','version':'1.0.0','main':'index.js'}).encode(encoding)
+    (tmp_path/'node_modules/dep/package.json').write_bytes(raw)
+    compare(f,[('','app.cjs','dep','require'),('','app.mjs','dep','import')])

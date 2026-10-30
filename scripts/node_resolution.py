@@ -141,7 +141,7 @@ class NodeResolver:
                                 if key in result: duplicates.add(key)
                                 result[key] = value
                             return result
-                        value = json.loads(contents[relative], object_pairs_hook=node_object)
+                        value = json.loads(contents[relative].decode("utf-8-sig"), object_pairs_hook=node_object)
                         if duplicates:
                             warnings[relative] = sorted(duplicates)
                         if not isinstance(value, dict):

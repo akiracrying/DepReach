@@ -363,3 +363,17 @@ Next work is contextual JS/TS binding/export and function-call modeling, then
 immutable fix-to-symbol mapping. The ten original requirements, live provider
 calls and viewport review remain open. This checkpoint is not JS reachability
 completion or an ecosystem accuracy measurement.
+
+
+## Node package-manifest conformance follow-up, 2026-10-30
+
+- Node 22/24 reject UTF-16 package.json, while Python's JSON byte parser
+  accepts it. Decode captured manifests as UTF-8 (permitting a BOM) before
+  parsing; the rejected manifest remains explicitly unsupported. Added both
+  encoding cases against the non-executing Node resolver oracle.
+- Required Linux oracle jobs now fail if the workspace directory symlink
+  cannot be created; the Windows privilege-related skip remains explicit.
+- 422 tests passed with one Windows symlink skip, and all 20 offline corpus
+  classifications remain unchanged. The module suites pass against local Node
+  22.19.0 and 24.22.1. Prior candidate-lookup commit 48a733f passed all six
+  remote CI jobs, including both Node oracle jobs.

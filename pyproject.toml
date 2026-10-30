@@ -38,6 +38,7 @@ Repository = "https://github.com/akiracrying/DepReach"
 
 [project.scripts]
 depreach = "depreach:main"
+depreach-review = "scripts.ai_review:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]

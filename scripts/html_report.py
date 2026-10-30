@@ -3,7 +3,7 @@ import os
 import re
 import html as html_lib
 from collections import defaultdict
-from scripts.reachability_result import reachability_status, reachability_value, explain_result
+from scripts.reachability_result import reachability_status, reachability_value, explain_result, suggested_next_action
 from urllib.parse import urlparse
 
 
@@ -147,6 +147,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     )
 
     links = []
+    node_by_id = {}
     for comp in components:
         purl = comp.get("purl")
         name = comp.get("name") or "unknown"
@@ -167,8 +168,13 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             status = "clean"
 
         node_id = purl or f"{name}@{version}" or name
+        if node_id in node_by_id:
+            node_by_id[node_id]["instanceCount"] += 1
+            continue
+        node_by_id[node_id] = {"instanceCount": 1}
         nodes.append(
             {
+                "instanceCount": 1,
                 "id": node_id,
                 "label": label,
                 "purl": purl,
@@ -179,6 +185,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
                 "maxScore": max_score,
             }
         )
+        node_by_id[node_id] = nodes[-1]
         links.append({"source": root_id, "target": node_id})
 
     total_components = len(components)
@@ -187,6 +194,16 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     # for client JS
     graph_data = {"nodes": nodes, "links": links}
 
+    from collections import Counter
+    status_counts = Counter(reachability_status(v.get("reachability")) for v in vulns)
+    summary_cards = "".join(
+        f'<button type="button" class="summary-card" data-filter-state="{state}"><strong>{status_counts[state]}</strong>{label}</button>'
+        for state, label in (("reachable", "Path found"), ("unknown", "Needs investigation"),
+                             ("unsupported", "Unsupported analysis"), ("no_path_found", "No modeled path")))
+    package_list = "".join(
+        f'<button type="button" class="package-chip pkg-filter" data-package="{html_lib.escape(str(st["package"] or purl), quote=True)}">'
+        f'{html_lib.escape(str(st["package"] or purl))} · {st["vulnCount"]}</button>'
+        for purl, st in sorted(per_purl.items(), key=lambda item: (-item[1]["vulnCount"], item[0])))
     project_name = html_lib.escape(project_name)
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -374,7 +391,8 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     table {{
       width: 100%;
       border-collapse: collapse;
-      font-size: 12px;
+      font-size: 13px;
+      line-height: 1.55;
     }}
     thead tr {{
       background: linear-gradient(90deg, rgba(22,27,34,0.9), rgba(13,17,23,0.9));
@@ -542,6 +560,29 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         max-width: 260px;
       }}
     }}
+    .summary-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:20px 0; }}
+    button, input, select {{ font:inherit; }}
+    .summary-card {{ text-align:left; border:1px solid var(--border-subtle); border-radius:12px; background:var(--bg-panel); color:var(--text-muted); padding:16px; cursor:pointer; }}
+    .summary-card strong {{ display:block; font-size:28px; color:var(--text); margin-bottom:4px; }}
+    .toolbar {{ display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:16px 0; }}
+    .toolbar label {{ display:grid; gap:5px; font-size:13px; color:var(--text-muted); }}
+    .toolbar input, .toolbar select {{ border:1px solid var(--border-subtle); color:var(--text); background:var(--bg-panel-alt); border-radius:7px; padding:9px; }}
+    #finding-search {{ width: min(360px,75vw); }}
+    .package-chip {{ margin:4px; padding:6px 10px; background:var(--bg-panel-alt); border:1px solid var(--border-subtle); border-radius:20px; color:var(--accent); cursor:pointer; }}
+    .package-list {{ max-height:160px; overflow:auto; margin:12px 0; }}
+    details > summary {{ cursor:pointer; padding:8px 0; color:var(--accent); }}
+    details pre {{ max-height:360px; overflow:auto; padding:12px; background:var(--bg-panel); border-radius:7px; font-size:12px; overflow-wrap:anywhere; }}
+    .col-analysis {{ min-width:230px; max-width:380px; }}
+    .col-analysis p {{ font-size:12px; margin-top:8px; line-height:1.5; }}
+    .col-package small {{ display:block; color:var(--text-muted); margin-top:5px; }}
+    .ai-opinion {{ border-left:2px solid var(--accent); padding-left:10px; margin-top:10px; }}
+    .table-wrapper {{ max-height:none; background:var(--bg-panel); }}
+    #vuln-table {{ table-layout:auto; }}
+    #vuln-table td {{ vertical-align:top; padding:16px 12px; overflow-wrap:anywhere; }}
+    #vuln-table th {{ background:var(--bg-panel-alt); }}
+    .node-label {{ pointer-events:none; }}
+    #graph-note, #results-count {{ font-size:13px; margin:8px 0; }}
+    @media(max-width:800px) {{ .summary-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-wrapper {{ overflow-x:auto; }} #vuln-table {{ min-width:850px; }} }}
   </style>
 </head>
 <body>
@@ -556,9 +597,13 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
       </div>
     </div>
 
-    <div class="card">
-      <h2>Dependency graph</h2>
-      <p>Each bubble is a dependency; color shows risk. Drag nodes to explore.</p>
+    <div class="summary-grid">{summary_cards}</div>
+    <p>Static paths and incomplete analysis are shown separately. Select a count to filter findings.</p>
+    <details class="card" id="dependency-map">
+      <summary>Explore dependencies · {total_components} installed components</summary>
+      <div class="package-list">{package_list}</div>
+      <h2>Package risk overview</h2>
+      <p>Packages are grouped by name and version. Lines connect packages to the project; they do not represent call paths. Hover or focus a node for its label.</p>
       <div id="graph-container">
         <svg id="graph"></svg>
       </div>
@@ -577,13 +622,21 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         </div>
       </div>
       <label class="graph-filter">
-        <input type="checkbox" id="hide-clean-nodes"> Hide packages with no vulnerabilities
+        <input type="checkbox" id="hide-clean-nodes" checked> Hide packages with no vulnerabilities
       </label>
-    </div>
+      <p id="graph-note" role="status"></p>
+    </details>
 
     <div class="card card--compact">
       <h2>Vulnerabilities</h2>
-      <p>Sorted by severity; reachable issues are highlighted. Click a package name to filter by it.</p>
+      <p>Paths found first, then severity. Expand evidence only when you need it.</p>
+      <div class="toolbar">
+        <label>Search findings<input type="search" id="finding-search" placeholder="Package, CVE, description…" /></label>
+        <label>Call analysis<select id="status-filter"><option value="">All statuses</option><option value="reachable">Path found</option><option value="unknown">Needs investigation</option><option value="unsupported">Unsupported</option><option value="no_path_found">No modeled path</option></select></label>
+        <label>Severity<select id="severity-filter"><option value="">All severities</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option><option>UNKNOWN</option></select></label>
+      </div>
+      <p id="results-count" role="status" aria-live="polite"></p>
+      <p id="no-matches" hidden>No findings match these filters. Clear the search or change the filters.</p>
       <div id="table-filter-bar" class="filter-bar" style="display:none">
         <span class="filter-bar-label">Filter:</span>
         <span id="filter-pkg-name" class="filter-bar-pkg"></span>
@@ -595,15 +648,10 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
           <thead>
             <tr>
               <th>Package</th>
-              <th>Version</th>
-              <th>CVE</th>
-              <th>Severity</th>
-              <th>Score</th>
-              <th>Reachable?</th>
+              <th>Finding</th>
+              <th>Call analysis / evidence</th>
               <th class="col-desc">Description</th>
-              <th>Affected</th>
-              <th>CWE</th>
-              <th class="col-refs">References</th>
+              <th class="col-refs">Advisory details</th>
             </tr>
           </thead>
           <tbody>
@@ -628,6 +676,8 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         purl = v.get("purl", "")
         cve = v.get("cve", "")
         sev = (v.get("severity") or "UNKNOWN").upper()
+        if sev not in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"}:
+            sev = "UNKNOWN"
         score = v.get("score", "")
         affected = v.get("affected_version", "")
         cwe = v.get("CWE", "") or ""
@@ -648,14 +698,12 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         pkg_esc = html_lib.escape(pkg)
         purl, ver, cve, affected, cwe = [html_lib.escape(str(value or ""), quote=True) for value in (purl, ver, cve, affected, cwe)]
         reach_attr = reach_status
-        html += f'            <tr data-purl="{purl}" data-package="{pkg_esc}" data-reachable="{reach_attr}">\n'
-        html += f'              <td class="col-package"><span class="pkg-filter" data-package="{pkg_esc}" title="Filter by this package">{pkg_esc}</span></td>\n'
-        html += f"              <td>{ver}</td>\n"
-        html += f"              <td>{cve}</td>\n"
-        html += f'              <td><span class="severity-badge severity-{sev}">{sev}</span></td>\n'
-        html += f"              <td>{score}</td>\n"
-        html += '              <td>'
+        html += f'            <tr data-purl="{purl}" data-package="{pkg_esc}" data-reachable="{reach_attr}" data-status="{state}" data-severity="{sev}">\n'
+        html += f'              <td class="col-package"><span class="pkg-filter" data-package="{pkg_esc}" title="Filter by this package">{pkg_esc}</span><small>{ver}</small></td>\n'
+        html += f'<td>{cve}<br/><span class="severity-badge severity-{sev}">{sev}</span> · {html_lib.escape(str(score or "—"))}</td>'
+        html += '<td class="col-analysis">'
         html += f'<span class="reach-pill reach-{reach_status}">{reach_label}</span>'
+        html += '<p><strong>Next:</strong> ' + html_lib.escape(suggested_next_action(reach)) + '</p>'
         if isinstance(reach, dict) and (reach.get("reasons") or reach.get("paths")):
             html += '<p>' + html_lib.escape(explain_result(reach)) + '</p>'
             details = []
@@ -691,6 +739,21 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
                 patch_text.append("Old context:\n" + item["old_context"])
                 patch_text.extend(("+" if c["kind"] == "added" else "-") + c["text"] for c in item["changes"])
             html += '<details><summary>Fix diff / function mapping</summary><pre style="white-space:pre-wrap">' + html_lib.escape("\n\n".join(patch_text)) + '</pre></details>'
+        for opinion in v.get("ai_reviews", []):
+            provider = html_lib.escape(str(opinion.get("provider", "")))
+            model = html_lib.escape(str(opinion.get("model", "")))
+            html += f'<details class="ai-opinion"><summary>AI second opinion · {provider}</summary><p>{model} · Static verdict unchanged</p>'
+            if opinion.get("status") == "completed":
+                html += '<p><strong>' + html_lib.escape(str(opinion.get("assessment", ""))) + '</strong></p>'
+                html += '<p>' + html_lib.escape(str(opinion.get("summary", ""))) + '</p>'
+                text = str(opinion.get("reasoning", "")) + "\nEvidence: " + ", ".join(opinion.get("evidence_ids", []))
+                text += "\n" + "\n".join(opinion.get("next_steps", []))
+                html += '<pre>' + html_lib.escape(text) + '</pre>'
+            else:
+                html += '<p>Review unavailable: ' + html_lib.escape(str(opinion.get("error", "unknown error"))) + '</p>'
+            if opinion.get("evidence_packet"):
+                html += '<details><summary>Evidence sent to provider</summary><pre>' + html_lib.escape(json.dumps(opinion["evidence_packet"], ensure_ascii=False, indent=2)) + '</pre></details>'
+            html += '</details>'
         html += "</td>\n"
         html += '              <td class="col-desc">\n'
         html += f'                <span class="desc-short">{short_desc_html}</span>\n'
@@ -698,9 +761,9 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         if full_desc:
             html += '                <span class="desc-toggle">Show more</span>\n'
         html += "              </td>\n"
-        html += f"              <td>{affected}</td>\n"
-        html += f"              <td>{cwe}</td>\n"
+
         html += '              <td class="col-refs">\n'
+        html += f'<details><summary>Versions, CWE &amp; links</summary><p>Affected: {affected}</p><p>{cwe}</p>'
         if refs:
             visible_refs = [u for u in refs if (u or '').strip()]
             main_refs = visible_refs[:2]
@@ -722,7 +785,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
                 html += "                </div>\n"
                 more = len(extra_refs)
                 html += f"                <span class='refs-toggle'>Show all ({more} more)</span>\n"
-        html += "              </td>\n"
+        html += "              </details></td>\n"
         html += "            </tr>\n"
 
     html += """          </tbody>
@@ -738,14 +801,23 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
 
     // graph
     (function() {
+      const panel = document.getElementById("dependency-map");
+      const checkbox = document.getElementById("hide-clean-nodes");
+      function drawGraph() {
+      const note = document.getElementById("graph-note");
+      if (typeof d3 === "undefined") { note.textContent = "Interactive graph unavailable offline. Use the package list above to filter findings."; return; }
       const svg = d3.select("#graph");
+      svg.selectAll("*").remove();
       const container = document.getElementById("graph-container");
       const width = container.clientWidth || 800;
       const height = container.clientHeight || 400;
       svg.attr("width", width).attr("height", height);
 
-      const nodes = graphData.nodes;
-      const links = graphData.links;
+      const selected = graphData.nodes.filter(n => !checkbox.checked || n.status !== "clean");
+      const nodes = selected.slice(0, 150).map(n => Object.assign({}, n));
+      const ids = new Set(nodes.map(n => n.id));
+      const links = graphData.links.filter(l => ids.has(l.source) && ids.has(l.target)).map(l => Object.assign({}, l));
+      note.textContent = nodes.length + " package groups shown" + (selected.length > 150 ? " · capped at 150; use the package list for every finding" : "") + ". Hover or keyboard-focus nodes for names.";
 
       function radius(d) {
         if (d.id === "__root__") return 26;
@@ -788,6 +860,9 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         .append("circle")
         .attr("r", d => radius(d))
         .attr("fill", d => color(d))
+        .attr("tabindex", 0)
+        .attr("role", "button")
+        .attr("aria-label", d => d.label + ": " + d.vulnCount + " findings; " + d.instanceCount + " instances")
         .call(d3.drag()
           .on("start", dragstarted)
           .on("drag", dragged)
@@ -802,7 +877,12 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         .attr("class", "node-label")
         .attr("text-anchor", "middle")
         .attr("dy", d => d.id === "__root__" ? 4 : 3)
-        .text(d => d.label.length > 22 ? d.label.slice(0, 20) + "…" : d.label);
+        .text(d => d.label.length > 28 ? d.label.slice(0, 26) + "…" : d.label)
+        .style("visibility", d => nodes.length <= 14 || d.id === "__root__" ? "visible" : "hidden");
+      node.append("title").text(d => d.label + " · " + (d.instanceCount || 1) + " instance(s)");
+      node.on("mouseenter focus", (_, d) => label.style("visibility", n => n.id === d.id ? "visible" : "hidden"));
+      node.on("mouseleave blur", () => label.style("visibility", d => nodes.length <= 14 || d.id === "__root__" ? "visible" : "hidden"));
+      node.on("keydown", function(event, d) { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.dispatchEvent(new MouseEvent("click", {bubbles:true})); } });
 
       svg.call(d3.zoom()
         .scaleExtent([0.25, 4])
@@ -874,21 +954,15 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         d.fy = null;
       }
 
-      const hideCleanCheckbox = document.getElementById("hide-clean-nodes");
-      function updateCleanVisibility() {
-        const hideClean = hideCleanCheckbox ? hideCleanCheckbox.checked : false;
-        node.style("display", d => (hideClean && d.status === "clean") ? "none" : null);
-        label.style("display", d => (hideClean && d.status === "clean") ? "none" : null);
-        link.style("display", d => {
-          if (!hideClean) return null;
-          const s = d.source, t = d.target;
-          return (s.status === "clean" || t.status === "clean") ? "none" : null;
-        });
+      simulation.on("end.cleanup", () => simulation.stop());
+      if (window.depreachGraphSimulation) window.depreachGraphSimulation.stop();
+      window.depreachGraphSimulation = simulation;
       }
-      if (hideCleanCheckbox) {
-        hideCleanCheckbox.addEventListener("change", updateCleanVisibility);
-      }
-      updateCleanVisibility();
+      panel.addEventListener("toggle", () => {
+        if (panel.open) drawGraph();
+        else if (window.depreachGraphSimulation) window.depreachGraphSimulation.stop();
+      });
+      checkbox.addEventListener("change", drawGraph);
     })();
 
     // table toggles
@@ -943,6 +1017,9 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     // package filter
     (function() {
       let currentFilter = null;
+      const search = document.getElementById("finding-search");
+      const statusFilter = document.getElementById("status-filter");
+      const severityFilter = document.getElementById("severity-filter");
       const filterBar = document.getElementById("table-filter-bar");
       const filterPkgName = document.getElementById("filter-pkg-name");
       const filterStats = document.getElementById("filter-stats");
@@ -959,6 +1036,8 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             if (row.getAttribute("data-reachable") === "yes") reachable++;
           }
         });
+        document.getElementById("results-count").textContent = visible + " of " + rows.length + " findings";
+        document.getElementById("no-matches").hidden = visible !== 0;
         filterStats.textContent = visible ? (visible + " vuln" + (visible !== 1 ? "s" : "") + ", " + reachable + " reachable") : "";
       }
 
@@ -966,7 +1045,11 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         const rows = table ? table.querySelectorAll("tbody tr") : [];
         rows.forEach(row => {
           const pkg = row.getAttribute("data-package");
-          row.style.display = currentFilter === null || pkg === currentFilter ? "" : "none";
+          const match = (currentFilter === null || pkg === currentFilter)
+            && (!statusFilter.value || row.dataset.status === statusFilter.value)
+            && (!severityFilter.value || row.dataset.severity === severityFilter.value)
+            && (!search.value.trim() || row.textContent.toLowerCase().includes(search.value.trim().toLowerCase()));
+          row.style.display = match ? "" : "none";
         });
         updateFilterStats();
       }
@@ -982,10 +1065,23 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
 
       function clearFilter() {
         currentFilter = null;
+        search.value = ""; statusFilter.value = ""; severityFilter.value = "";
         if (filterBar) filterBar.style.display = "none";
         applyFilter();
       }
 
+      search.addEventListener("input", applyFilter);
+      statusFilter.addEventListener("change", applyFilter);
+      severityFilter.addEventListener("change", applyFilter);
+      document.querySelectorAll(".summary-card").forEach(button => button.addEventListener("click", () => {
+        currentFilter = null; search.value = ""; severityFilter.value = "";
+        statusFilter.value = button.dataset.filterState;
+        if (filterBar) filterBar.style.display = "";
+        if (filterPkgName) filterPkgName.textContent = "All packages";
+        applyFilter();
+      }));
+      document.querySelectorAll(".package-list .pkg-filter").forEach(button => button.addEventListener("click", () => setFilter(button.dataset.package)));
+      applyFilter();
       window.setVulnPackageFilter = setFilter;
       window.clearVulnPackageFilter = clearFilter;
 
@@ -1010,7 +1106,29 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
 </html>
 """
 
-    os.makedirs(os.path.dirname(html_file), exist_ok=True)
+    os.makedirs(os.path.dirname(html_file) or ".", exist_ok=True)
     with open(html_file, "w", encoding="utf-8") as f:
         f.write(html)
 
+
+
+def main(argv=None):
+    """Re-render saved scan evidence without rescanning or API requests."""
+    import argparse
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument("--input", required=True, help="Saved findings JSON")
+    parser.add_argument("--sbom", required=True)
+    parser.add_argument("--output", required=True, help="New HTML file")
+    parser.add_argument("--project", default="DepReach")
+    args = parser.parse_args(argv)
+    output = Path(args.output)
+    if output.exists() or not Path(args.input).is_file() or not Path(args.sbom).is_file():
+        parser.error("input and SBOM must exist; output must be a new file")
+    generate_html_report(args.project, args.sbom, args.input, args.output)
+    print(output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

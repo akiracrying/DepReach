@@ -53,6 +53,7 @@ def vulns_to_sarif(vulns: list, project_uri: str = None) -> dict:
                 "isReachable": reachable,
                 "reachabilityStatus": reachability_status(v.get("reachability")),
                 "reachability": v.get("reachability"),
+                "aiReviews": v.get("ai_reviews", []),
                 "package": v.get("package"),
                 "installed_version": v.get("installed_version"),
                 "severity": sev,

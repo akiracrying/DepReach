@@ -64,3 +64,26 @@ def explain_result(report):
     if count:
         return f"No path found to {count} mapped target(s); unresolved calls prevent a negative conclusion"
     return "Analysis incomplete: " + ", ".join(sorted(reasons)[:3])
+
+
+def suggested_next_action(report):
+    """A triage action, not another reachability verdict."""
+    state = reachability_status(report)
+    reasons = set(report.get("reasons", [])) if isinstance(report, dict) else set()
+    if state == "reachable":
+        return "Inspect the call path and check the advisory's runtime exploit conditions."
+    if "javascript_reachability_not_implemented" in reasons:
+        return "Prioritize the affected package update; JS/TS call-path analysis is not available yet."
+    if "no_fix_commit_reference" in reasons:
+        return "Find the advisory's immutable fix commit before mapping affected code."
+    if reasons & {"dependency_source_unavailable", "transitive_version_unresolved", "transitive_version_conflict", "dependency_metadata_incomplete"}:
+        return "Provide a resolved dependency inventory and the missing exact-version source or metadata."
+    if reasons & {"patch_context_not_uniquely_matched", "patch_file_not_uniquely_matched", "no_mapped_patch_functions", "fix_parent_symbol_missing_or_ambiguous", "patch_target_ambiguous"}:
+        return "Compare the fix against the installed version and inspect the unmatched patch evidence."
+    if reasons & {"non_python_patch_change", "patch_changes_module_or_class_code"}:
+        return "Inspect changed native/data/module code and the unsupported model boundaries."
+    if reasons & {"speculative_callback_path", "callback_escapes", "callback_argument"}:
+        return "Check where the callback is registered and whether its consumer actually invokes it."
+    if state == "no_path_found":
+        return "Review the modeled scope and remaining advisory conditions before changing alert policy."
+    return "Inspect unresolved-call evidence and the caller that blocks this finding's conclusion."

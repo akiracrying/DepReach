@@ -56,3 +56,23 @@ implementation order, not a completion claim.
 
 Detailed implementation evidence and outstanding conditions:
 [implementation ledger](IMPLEMENTATION_STATUS.md).
+
+
+## Active extension: optional API review and report readability
+
+The current checkout implements bounded post-scan review through OpenAI,
+DeepSeek and Claude, plus compact/filterable reports and an optional package
+map. See AI_REVIEW.md for preview, keys, explicit model selection and examples.
+This feature is not in the published 0.2.0 package yet.
+
+Remaining checks and work:
+
+1. Verify actual provider calls using a selected account/model and credentials;
+   current tests verify mocked wire contracts, not live account access.
+2. Inspect report screenshots on desktop/mobile; local file URL access was
+   rejected by browser policy. DOM behavior is checked locally and in a new
+   CI job, whose remote run remains unverified until publication.
+3. Extend review evidence with versioned caller/function excerpts only under
+   explicit data selection; retain the preview and evidence provenance.
+4. Resume Node module resolution validation and the remaining ten analysis
+   requirements above; AI opinions do not replace those implementations.

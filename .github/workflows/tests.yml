@@ -21,3 +21,37 @@ jobs:
       - run: pip install -e '.[dev,node]'
       - run: python -m pytest tests -q
       - run: python -m scripts.evaluate_corpus --offline --output reports/ci-corpus --min-coverage 0.70
+
+  report_ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare report fixture
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.html_report import generate_html_report
+          output = Path("reports/ui-fixture")
+          output.mkdir(parents=True)
+          states = ["reachable", "unknown", "unsupported", "no_path_found"]
+          findings = [{"cve": "CVE-TEST-" + str(i), "package": "package" + str(i),
+              "purl": "pkg:npm/package" + str(i) + "@1", "installed_version": "1",
+              "severity": "HIGH" if i % 2 else "CRITICAL", "description": "A sample finding",
+              "reachability": {"status": state, "reasons": ["fixture_reason"]}}
+              for i, state in enumerate(states)]
+          components = [{"name": "package" + str(i), "version": "1", "purl": "pkg:npm/package" + str(i) + "@1"} for i in range(180)]
+          (output / "sbom.json").write_text(json.dumps({"components": components}), encoding="utf-8")
+          (output / "findings.json").write_text(json.dumps(findings), encoding="utf-8")
+          generate_html_report("UI fixture", output / "sbom.json", output / "findings.json", output / "report.html")
+          PY
+      - name: Install isolated DOM test dependencies
+        run: npm install --prefix reports/report-dom-tools --ignore-scripts --no-audit --no-fund jsdom@26.1.0 d3@7.9.0
+      - name: Verify filters and optional graph without network resources
+        run: node tests/report_dom_check.cjs reports/ui-fixture/report.html

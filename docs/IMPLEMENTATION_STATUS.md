@@ -237,3 +237,39 @@ not complete; all earlier outstanding acceptance checks remain applicable.
   function/call/import counts, reducing intermediate JSON from 115,159,003 to
   69,768,676 bytes. Evidence: reports/nodegoat-syntax-v1/syntax-compact-validation.json.
   Syntax extraction is still not resolved module/call reachability.
+
+
+## API review and report usability checkpoint, 2026-10-30
+
+- Added optional post-scan OpenAI Responses, DeepSeek Chat Completions and
+  Claude Messages transports. Explicit provider/model and environment key;
+  bounded evidence/request counts/output tokens, no automatic retries or tools.
+  Preview writes exact request bodies without network. Code excerpts are opt-in.
+- Opinions preserve static findings and appear separately in JSON, HTML and
+  SARIF. Schema, completion status and evidence IDs are checked. Provider errors
+  remain errors; keys/error bodies are not retained. Packets, prompt version,
+  timestamp and input digest support review. ID validation does not prove the
+  correctness of model reasoning. Live credentialed provider calls remain open.
+- Reports now offer status cards, search and combined status/severity/package
+  filters, five compact columns, closed evidence/patch/reference disclosures,
+  and a suggested next action for primary blocker categories. The package map
+  starts closed and hides clean packages; repeated same-version instances share
+  a node while preserving their count. Large maps cap drawn nodes at 150 and
+  show labels on hover/focus. Star links are labeled as overview links, not
+  dependency or call edges. All affected packages remain in the package list.
+- 351 Python tests passed before the final text-only triage hints. Offline
+  20-case corpus remains seven positives, ten negatives, three expected unknown,
+  with no incorrect conclusions in those cases. No target application ran.
+- Isolated DOM checks passed for saved NodeGoat (47 findings), Whoogle (53) and
+  the exact new CI fixture (all four statuses and 180 components), both with
+  local D3 and with no D3. Search/filter combinations, counters, graph cap,
+  default collapse, labels and missing-CDN fallback are exercised. The new CI
+  job was exercised locally; no remote CI execution is claimed yet.
+- Visual viewport inspection is still outstanding: browser policy rejected the
+  local file URL. No alternate browser or URL workaround was attempted. Local
+  DOM checks do not establish screenshot quality. Artifacts remain under
+  reports/report-readability-v1; usage is in docs/AI_REVIEW.md.
+
+All ten original requirements remain open. This checkpoint adds API integration
+and usability; it does not complete JS/TS reachability, independently reviewed
+application coverage or the other outstanding analysis requirements.

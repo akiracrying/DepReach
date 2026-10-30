@@ -107,6 +107,17 @@ and known abstentions; these measurements do not establish ecosystem accuracy.
 
 Remaining work and acceptance criteria: [next implementation steps](docs/NEXT_STEPS.md).
 
+## Optional AI second opinion
+
+The current checkout can review existing JSON evidence through OpenAI, DeepSeek
+or Claude. Preview the request with `python -m scripts.ai_review --dry-run`;
+provider/model and input/output arguments are required. Opinions stay separate
+from static verdicts. See [configuration and examples](docs/AI_REVIEW.md).
+
+Saved reports can be refreshed with `python -m scripts.html_report` without
+rescanning. The updated view adds status counts, search and combined filters,
+compact evidence disclosures, and a collapsed package map with fewer labels.
+
 ## Verification
 
 ```bash

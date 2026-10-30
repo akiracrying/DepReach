@@ -82,10 +82,13 @@ jobs:
         env:
           DEPREACH_REQUIRE_NODE_ORACLE: '1'
           DEPREACH_NODE_ORACLE_REPORT: reports/node-oracle.jsonl
-        run: python -m pytest tests/test_node_resolution.py tests/test_node_imports.py -q
+          DEPREACH_NODE_BINDING_ORACLE_REPORT: reports/node-binding-oracle.jsonl
+        run: python -m pytest tests/test_node_resolution.py tests/test_node_imports.py tests/test_javascript_bindings.py -q
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: node-resolution-${{ matrix.node }}
-          path: reports/node-oracle.jsonl
+          path: |
+            reports/node-oracle.jsonl
+            reports/node-binding-oracle.jsonl
           if-no-files-found: error

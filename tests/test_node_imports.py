@@ -30,15 +30,20 @@ def records(summary):
     return [json.loads(line) for line in Path(summary['records']).read_text(encoding='utf-8').splitlines()]
 
 
-def test_audit_preserves_unverified_commonjs_and_nonliteral_boundaries(tmp_path):
+def test_audit_distinguishes_wrapper_binding_from_shadowed_and_nonliteral_lookup(tmp_path):
     app,inventory,sources=fixture(tmp_path,"require('dep'); function f(require){ require('dep'); } require(variable); import('dep');")
     summary=audit.audit_node_imports(inventory,sources,tmp_path/'out')
     values=records(summary)
     assert len(values)==4
     assert sum(v['module_lookup']['status']=='resolved' for v in values)==3
     assert values[2]['module_lookup']['reason']=='nonliteral_module_specifier'
-    assert all(v['binding_resolution']=='unverified_commonjs_candidate' for v in values[:3])
-    assert not summary['call_graph_implemented'] and not summary['binding_resolution_implemented']
+    assert [v['binding_resolution'] for v in values[:3]] == ['verified_commonjs_wrapper', 'shadowed_commonjs_identifier', 'verified_commonjs_wrapper']
+    assert values[1]['binding_evidence']['declarations'][0]['kind']=='parameter'
+    assert summary['counts']['verified_commonjs_candidates']==2
+    assert summary['counts']['shadowed_commonjs_candidates']==1
+    assert not summary['call_graph_implemented'] and summary['binding_resolution_implemented']
+    assert summary['binding_resolution_scope']=='direct_commonjs_require_identity_only'
+    assert not summary['exported_value_resolution_implemented']
     assert not summary['candidate_lookup_complete']
     assert all(v['resolution_is_invocation'] is False for v in values)
     assert all(v['importer_source_sha256']==hashlib.sha256((app/'main.js').read_bytes()).hexdigest() for v in values)
@@ -130,4 +135,44 @@ def test_cli_resolve_imports_includes_sources_syntax_and_preserves_unsupported_s
     assert findings[0]['reachability']['module_resolution_manifest']==saved['module_resolution_manifest']
     assert findings[0]['reachability']['module_lookup_summary']['scope']=='scan_wide_candidates'
     html=(output/'report.html').read_text(encoding='utf-8')
-    assert 'JS/TS module lookup' in html and 'CommonJS bindings are unverified' in html
+    assert 'JS/TS module lookup' in html and 'Node require binding verified: 1' in html
+    assert 'Exported values, call paths and vulnerability reachability are pending' in html
+
+
+def test_same_source_has_distinct_bindings_for_explicit_package_profiles(tmp_path):
+    app,inventory,sources=fixture(tmp_path,"require('dep');")
+    (app/'node_modules/dep/index.js').write_text("require('fs');",encoding='utf-8')
+    nested=app/'esm';nested.mkdir()
+    (nested/'package.json').write_text('{"type":"module"}',encoding='utf-8')
+    (nested/'entry.js').write_text("require('fs');",encoding='utf-8')
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out')
+    values=records(summary)
+    esm=next(v for v in values if v['importer_file']=='esm/entry.js')
+    cjs=next(v for v in values if v['importer_instance']=='node_modules/dep')
+    assert esm['binding_resolution']=='unresolved_commonjs_binding'
+    assert esm['binding_evidence']['reason']=='require_not_a_node_esm_binding'
+    assert cjs['binding_resolution']=='verified_commonjs_wrapper'
+    assert not summary['commonjs_binding_complete']
+
+
+def test_mutating_the_disk_does_not_change_binding_evidence_from_capture(tmp_path,monkeypatch):
+    app,inventory,sources=fixture(tmp_path,"require('dep');")
+    parse=audit.parse_javascript
+    def mutate(path,raw):
+        (app/'main.js').write_text("function f(require){require('dep');}",encoding='utf-8')
+        return parse(path,raw)
+    monkeypatch.setattr(audit,'parse_javascript',mutate)
+    summary=audit.audit_node_imports(inventory,sources,tmp_path/'out')
+    assert records(summary)[0]['binding_resolution']=='verified_commonjs_wrapper'
+
+
+def test_cli_binding_gap_does_not_return_a_complete_audit_code(tmp_path):
+    app,inventory,sources=fixture(tmp_path,"eval(code);require('dep');")
+    input_file=tmp_path/'inventory.json';sources_file=tmp_path/'sources.json'
+    input_file.write_text(json.dumps(inventory),encoding='utf-8')
+    sources_file.write_text(json.dumps(sources),encoding='utf-8')
+    out=tmp_path/'out'
+    assert audit.main(['--inventory',str(input_file),'--sources',str(sources_file),'--output',str(out)])==3
+    summary=json.loads((out/'summary.json').read_text(encoding='utf-8'))
+    assert summary['candidate_lookup_complete'] and not summary['commonjs_binding_complete']
+    assert records(summary)[0]['binding_evidence']['reason']=='direct_eval_may_change_bindings'

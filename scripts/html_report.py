@@ -215,7 +215,16 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         status_counts = lookup_counts.get("by_status", {})
         statuses = " | ".join(html_lib.escape(str(key) + ": " + str(value)) for key, value in sorted(status_counts.items()))
         module_lookup_html = '<details class="card"><summary>JS/TS module lookup | scan-wide candidates</summary><p>' + statuses + '</p>'
-        module_lookup_html += '<p>CommonJS bindings are unverified. Call-graph construction and vulnerability reachability are pending.</p></details>'
+        if module_lookup.get("binding_resolution_scope") == "direct_commonjs_require_identity_only":
+            binding_counts = lookup_counts.get("commonjs_bindings", {})
+            binding_labels = {"verified_commonjs_wrapper": "Node require binding verified",
+                              "shadowed_commonjs_identifier": "Local require binding; value flow pending",
+                              "unresolved_commonjs_binding": "Require binding unresolved"}
+            labels = " | ".join(html_lib.escape(binding_labels.get(key, key) + ": " + str(value))
+                                for key, value in sorted(binding_counts.items()))
+            module_lookup_html += '<p>' + labels + '</p><p>Only direct CommonJS loader identity is checked. Exported values, call paths and vulnerability reachability are pending.</p></details>'
+        else:
+            module_lookup_html += '<p>CommonJS bindings are unverified. Call-graph construction and vulnerability reachability are pending.</p></details>'
     project_name = html_lib.escape(project_name)
     html = f"""<!DOCTYPE html>
 <html lang="en">

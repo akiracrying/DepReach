@@ -137,8 +137,8 @@ The final full test run is `reports/pytest-node-final-02` (327 passed).
 ## Candidate module lookup checkpoint, 2026-10-30
 
 The current checkout adds Node module path analysis; this feature is not in the
-published 0.2.0 package. It does not yet resolve CommonJS bindings, exported
-values or function calls. In particular, a syntactic require can be shadowed.
+published 0.2.0 package. Direct CommonJS require identity is now checked against
+lexical scopes, but exported values and function calls are not yet resolved.
 A resolved file path does not change an npm finding's unsupported reachability.
 
 Run the full pipeline from C:/Projects/DepReach with a fresh output directory:
@@ -170,9 +170,10 @@ queries, package installation or application execution:
   --output reports/nodegoat-my-lookup
 ```
 
-A completed candidate lookup returns 0. Explicit unknown/unsupported lookup,
-syntax/source gaps or output omissions return 3. This exit code concerns lookup
-coverage, not whether the application is vulnerable. The full --scan pipeline
+A completed candidate lookup with no unresolved CommonJS binding returns 0.
+Explicit unknown/unsupported lookup or binding, syntax/source gaps and output
+omissions return 3. This exit code concerns audit coverage, not whether the
+application is vulnerable. The full --scan pipeline
 continues to return 3 for npm vulnerabilities with unsupported JS reachability.
 
 ### Modeled profile and boundaries
@@ -222,7 +223,9 @@ The unchanged NodeGoat input and earlier inventory selection yielded:
   installation instances. No parse issues or count/output omissions.
 - 5,525 lookup candidates: 4,807 file targets, 520 built-ins, three type-only,
   195 unresolved (32 nonliteral, 81 absent package instances, 82 absent relative
-  files). 5,494 CommonJS syntax candidates still need binding verification.
+  files). Of 5,494 direct CommonJS candidates, 5,382 have a verified wrapper
+  binding, 78 refer to local declarations and 34 remain unresolved due to eval.
+  Local declarations may still receive a loader value; that dataflow is pending.
 - 47 package/advisory findings remain unsupported for JS reachability.
 
 Artifacts: reports/nodegoat-resolution-scan-v1 and the standalone audits under
@@ -242,3 +245,58 @@ Linux CI covers it. Visual viewport checks and live AI calls remain separate.
 Reference contracts: [Node CommonJS lookup](https://nodejs.org/docs/latest-v22.x/api/modules.html#all-together),
 [package entry points and conditions](https://nodejs.org/api/packages.html),
 [ESM resolution](https://nodejs.org/api/esm.html#resolution-and-loading-algorithm).
+
+
+## Direct CommonJS loader binding, 2026-10-30
+
+The module audit now uses lexical scopes from the same captured tree to
+classify a direct require identifier. This is a precursor to symbol/call
+analysis, not a vulnerability verdict or a complete binding/dataflow engine.
+
+- verified_commonjs_wrapper: a runtime CommonJS profile, no shadowing declaration
+  and no observed write or dynamic environment that could replace require.
+- shadowed_commonjs_identifier: a parameter, local declaration or imported value
+  with that name. It may itself receive a loader value; forwarding and value
+  flow remain unmodeled. Keep the raw path candidate separate from this identity.
+- unresolved_commonjs_binding: module/compile boundaries, direct eval, with,
+  wrapper arguments exposure, possible wrapper reassignment or incomplete
+  syntax/binding analysis. The reason is preserved per reference.
+
+Scopes distinguish function parameters from body declarations, including
+closures created by default arguments. Hoisting, block/loop/catch scope,
+var/let/const, named functions/classes and destructured bindings are modeled.
+ESM imports are local declarations, never an implicit CommonJS wrapper.
+Ambiguous .js uses the declared default Node syntax profile; import/export,
+import.meta, top-level await and top-level lexical wrapper redeclarations
+prevent a guessed CommonJS binding. Ambiguous top-level for-await retains a
+runtime-check boundary after Node 22 rejected an authored syntax-detection
+fixture. Explicit CommonJS syntax conflicts are unsupported. JSX/TS/declaration files retain compiler boundaries. Dynamic eval
+and writes are conservatively scoped to the source module; no control-flow
+proof that a write/eval is irrelevant is claimed yet.
+
+Records add binding_evidence with profile, reason, declaration spans and explicit
+limits. Summary commonjs_bindings counts all candidates, including records
+omitted by the output cap. Binding source enters the audit fingerprint. Trees
+and lexical tables are released after each physical parse; reused package
+artifacts retain compact results and their individual installation contexts.
+The standalone/npm audit returns 3 if a CommonJS binding remains unresolved.
+Full npm SCA still preserves unsupported reachability for every advisory.
+
+Real evidence: reports/nodegoat-binding-audit-v3, using the existing verified
+NodeGoat sources and inventory. The 5,525 path lookup counts are unchanged.
+The 78 local bindings include browser-bundle loader parameters; treating them
+as Node require would create the wrong dependency relationship. The application's
+own 50 candidates have 48 verified wrapper bindings and two unresolved because
+the containing module uses eval. No real application or dependency code ran.
+
+Synthetic tests compare authored scope fixtures with Node's vm.compileFunction
+using an injected sentinel require; only those test strings execute. The normal
+resolution oracle continues to avoid loading any target module. Both independent
+checks run in required Node 22/24 CI jobs. Separate retained artifacts contain
+15 scope fixtures and 22 default-module-profile comparisons per runtime.
+
+Next: resolve ESM named/default/namespace imports and re-exports; model CommonJS
+module.exports/exports values and their aliasing/mutations/cycles; then connect
+actual call expressions and immutable fix-to-symbol mappings. Require aliases,
+module.require/createRequire, callbacks, receiver/object flow and custom loaders
+remain explicit future work.

@@ -247,7 +247,9 @@ def scan_npm_inventory(inventory, output_dir, source_context=None, *, module_res
             finding["reachability"]["module_lookup_summary"] = {
                 "scope": "scan_wide_candidates", "counts": module_resolution["counts"],
                 "input_sha256": module_resolution["input_sha256"],
-                "binding_resolution_implemented": False, "call_graph_implemented": False}
+                "binding_resolution_implemented": module_resolution.get("binding_resolution_implemented", False),
+                "binding_resolution_scope": module_resolution.get("binding_resolution_scope"),
+                "exported_value_resolution_implemented": False, "call_graph_implemented": False}
     (output / "vulnerabilities.json").write_text(json.dumps(findings, indent=2), encoding="utf-8")
     write_sarif(findings, str(output / "vulnerabilities.sarif"), project_uri=inventory["root"])
     generate_html_report(inventory["project_name"], str(output / "sbom.json"),
@@ -323,6 +325,7 @@ def main(argv=None):
         (output / "inventory.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
         (output / "sbom.json").write_text(json.dumps(npm_sbom(inventory), indent=2), encoding="utf-8")
         print("Node module candidates: " + json.dumps(resolution_context["counts"]["by_status"], sort_keys=True))
+        print("CommonJS require identity: " + json.dumps(resolution_context["counts"]["commonjs_bindings"], sort_keys=True))
     print(f"npm instances: {len(inventory['instances'])}; edges: {len(inventory['edges'])}; omitted: {len(inventory['omitted'])}; issues: {len(inventory['issues'])}")
     if args.scan:
         findings = scan_npm_inventory(inventory, output, source_context, module_resolution=resolution_context)
@@ -332,7 +335,8 @@ def main(argv=None):
     print("JavaScript/TypeScript reachability is not implemented yet.")
     return 0 if (inventory["tree_complete"] and (source_context is None or source_context["complete"])
                  and (syntax_context is None or syntax_context["syntax_complete"])
-                 and (resolution_context is None or resolution_context["candidate_lookup_complete"])) else 3
+                 and (resolution_context is None or (resolution_context["candidate_lookup_complete"]
+                     and resolution_context["commonjs_binding_complete"]))) else 3
 
 
 if __name__ == "__main__":

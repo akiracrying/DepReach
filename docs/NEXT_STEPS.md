@@ -5,7 +5,7 @@ inventory/source/syntax foundation are ready for review. JS/TS reachability is
 not implemented. The existing ten requirements remain open; this is their
 implementation order, not a completion claim.
 
-## Current evidence
+## Publication baseline (2026-10-13)
 
 - Local verification: 327 tests passed; offline corpus: 20 cases, seven positive,
   ten negative, three expected indeterminate, zero incorrect conclusions.
@@ -16,6 +16,10 @@ implementation order, not a completion claim.
 - Reports, downloaded databases, source archives and application checkouts stay
   local. Reproduction commands and pinned revisions are in REAL_APPS.md,
   EVALUATION.md and NPM.md.
+
+Latest working-tree checkpoint (2026-10-30): 500 tests passed with one Windows
+symlink skip; direct CommonJS require identity is checked. Detailed scope and
+real-application evidence are in IMPLEMENTATION_STATUS.md and NPM.md.
 
 ## Priorities and acceptance criteria
 
@@ -42,8 +46,9 @@ implementation order, not a completion claim.
    Keep runtime/dev/optional scope and alternative versions explicit.
 8. **Implement JS/TS reachability end to end.** Candidate module lookup is now
    connected to npm CLI and tested against Node for declared 22/24 default
-   cases. Next resolve lexical CommonJS/ESM bindings, exported values and call
-   paths before mapping immutable fixes. Preserve contextual installation
+   cases. Direct CommonJS require identity now has lexical scope checks.
+   Next resolve ESM and CommonJS value bindings, exported values and call paths
+   before mapping immutable fixes. Preserve contextual installation
    identity, shadowed require/exports, returned values and callbacks. Native,
    compiler and unsupported loader boundaries remain explicit; npm findings
    still have unsupported reachability. See NPM.md for current scope.

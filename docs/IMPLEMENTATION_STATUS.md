@@ -377,3 +377,56 @@ completion or an ecosystem accuracy measurement.
   classifications remain unchanged. The module suites pass against local Node
   22.19.0 and 24.22.1. Prior candidate-lookup commit 48a733f passed all six
   remote CI jobs, including both Node oracle jobs.
+
+
+## CommonJS require identity checkpoint, 2026-10-30
+
+- Added a lexical scope pass over the captured tree. Function defaults have
+  a parameter environment distinct from body var/function declarations; block,
+  catch, loop, class and static-block scope and destructuring preserve binding
+  identity. Hoisting is collected before answering any require reference.
+- Direct CommonJS wrapper require is separated from a local declaration and
+  unresolved binding. Reassignment, Annex B block functions, direct eval, with
+  and exposed wrapper arguments prevent a guessed stable loader identity.
+  Declaration evidence is bounded, with explicit omissions. JSX/TypeScript,
+  declaration files, ESM globals and explicit CommonJS syntax conflicts retain
+  their boundaries. Ambiguous for-await is unsupported after a Node 22
+  syntax-detection fixture failed; explicit ESM remains a separate profile.
+- npm --resolve-imports and the standalone audit include the new per-reference
+  evidence, counts and engine fingerprint. Both return 3 for unresolved
+  CommonJS bindings. The HTML lookup card separately displays verified wrapper,
+  local declaration and unresolved counts. Local require declarations can
+  receive a loader value; that value flow remains unmodeled.
+- 500 tests passed with one Windows symlink privilege skip. Local Node 22.19.0
+  and 24.22.1 exercised 15 authored scope programs with an injected sentinel
+  loader and 22 .js module-profile comparisons per runtime. No captured real
+  application/dependency program executes. Node CI retains both scope/profile
+  and non-executing path-resolution oracle artifacts.
+- The 20-case Python corpus remains seven positives, ten negatives and three
+  expected unknown, with no wrong conclusions in those cases. This is not a
+  cross-ecosystem accuracy estimate.
+- Real NodeGoat c5cb68a7084e4ae7dcc60e6a98768720a81841e8 reuses 396 verified
+  source instances and its prior inventory, without downloads or SCA rescan.
+  The audit covers 1,680 physical files / 1,763 installation contexts and
+  5,525 candidates: 4,807 file targets, 520 built-ins, three type-only, 195
+  unresolved. Of 5,494 direct CommonJS candidates, 5,382 have a verified
+  wrapper binding, 78 a local declaration and 34 remain unresolved due to eval.
+  The 78 include browser-bundle loader parameters that cannot use Node's
+  dependency lookup blindly. App-only: 48 verified, two unresolved by eval.
+- Artifacts: reports/nodegoat-binding-audit-v3 and the fresh rendering under
+  reports/nodegoat-binding-report-v2. Historical 47 SCA findings keep unsupported
+  JS reachability; fresh module evidence is explicitly separate. DOM checks
+  cover 47 findings with and without local D3. Browser viewport inspection and
+  live credentialed provider calls are still outstanding.
+
+Next implement ESM and CommonJS value binding, exports/aliasing/cycles and actual
+function-call edges before immutable vulnerability-target mapping. The pass
+implemented here only establishes direct loader identity; it does not satisfy
+requirement 8 or close any of the ten original analysis requirements.
+
+Packaging check: the 0.2.1.dev0 wheel/sdist in
+reports/js-bindings-build-20261030-01 passed strict metadata validation. The
+new binding module and optional API modules match the source bytes; a separate
+Python process imported and exercised the new module from the wheel, with
+normal installed dependencies. The sdist includes both new binding tests and
+the synthetic Node helper. This development artifact is not a published release.

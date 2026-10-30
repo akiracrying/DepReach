@@ -10,7 +10,7 @@ A reachable **patch-associated function** is evidence for triage, not proof of e
 ## Features
 
 - **SBOM** — CycloneDX via cyclonedx-py for Python; an additional npm lockfile command preserves installation instances
-- **npm SCA preview** — `python -m scripts.npm_inventory --input APP --output NEW_REPORT_DIR --scan`; [scope and commands](docs/NPM.md). `--sources` verifies package bytes; `--syntax` extracts JS/TS AST facts (node extra). `--resolve-imports` audits Node module paths and implies source/syntax stages. JS/TS reachability is not implemented yet
+- **npm SCA preview** — `python -m scripts.npm_inventory --input APP --output NEW_REPORT_DIR --scan`; [scope and commands](docs/NPM.md). `--sources` verifies package bytes; `--syntax` extracts JS/TS AST facts (node extra). `--resolve-imports` audits Node module paths and direct CommonJS `require` identity, and implies source/syntax stages. JS/TS reachability is not implemented yet
 - **Vulnerability lookup** — Local VDB (e.g. appthreat-vulnerability-db)
 - **Reachability** — Qualified Python symbols, scoped imports and re-exports, simple instances and inheritance, exact old-side patch context, and call-chain evidence
 - **Caching** — SQLite cache keyed by project and dependency source contents, patch contents, analysis options and analyzer version

@@ -273,3 +273,46 @@ not complete; all earlier outstanding acceptance checks remain applicable.
 All ten original requirements remain open. This checkpoint adds API integration
 and usability; it does not complete JS/TS reachability, independently reviewed
 application coverage or the other outstanding analysis requirements.
+
+
+## Verified source context for API review, 2026-10-30
+
+- Added explicit, repeatable --source-root with --include-code. Python source
+  context is admitted only when the selected root exactly matches a recorded
+  scan snapshot and the recomputed relative-path/content digest agrees. Missing,
+  changed or ambiguous snapshots remain source issues. Legacy reports do not
+  gain unverified current-code excerpts.
+- Capture, digest and extraction share immutable in-memory bytes. Definitions
+  are qualified against the scanner module-name contract; duplicate definitions
+  cannot borrow identity. Functions, classes, module windows, actual modeled
+  paths, speculative paths and scan-wide diagnostics keep distinct roles/scopes.
+  Hunk duplicates are grouped before limiting distinct patch targets.
+- Excerpts retain original contiguous lines, encoding, file SHA256, UTF-8 excerpt
+  SHA256 and scan-root digest. Whole/partial flags and omitted-reference markers
+  are explicit. LF/CRLF and non-newline Unicode separators inside literals are
+  covered. Resource limits bound files, roots, bytes and excerpts. No target
+  module is executed; unselected roots are not captured.
+- --dry-run --sbom now produces a clearly labeled local HTML request preview,
+  including readable source disclosures; JSON remains the exact request bodies.
+  No API key or provider request is needed for preview. HTML source is escaped,
+  and completed opinions retain the same inspectable packet in HTML/JSON/SARIF.
+- 386 Python tests passed (reports/pytest-review-sources-full-20261030-06).
+  The 20-case offline corpus is unchanged: seven positives, ten negatives,
+  three expected unknown, zero wrong conclusions in those cases. Provider
+  transport tests verify the same source packet enters all three adapters.
+- Saved Whoogle v4.10 was not rescanned: seven existing positive findings yielded
+  48 source excerpts, independently compared with their original file bytes,
+  line ranges and hashes. Packet sizes remain below 48 KB. One finding retains an explicit
+  selection-limit issue: four of eight distinct patch targets are selected by
+  default. This omission remains visible and is not a negative conclusion. Evidence:
+  reports/review-sources-v4/summary.json and per-finding packets. Local preview:
+  reports/review-sources-v3/whoogle-openai-preview.html, selected CVE-2023-32681.
+  This does not independently validate the underlying static findings or CVEs.
+- DOM checks passed for the 53-finding real preview with and without local D3,
+  and the new CI fixture checks source-disclosure toggles and escaped code.
+  Previous API/report commit 962c986 passed all four remote CI jobs; this source
+  extension is pending its own publication/CI run at this checkpoint.
+
+Live account/provider calls and visual viewport checks are still outstanding.
+All ten original analysis requirements remain open; source-backed AI review is
+an additional triage facility, not completion of non-Python reachability.

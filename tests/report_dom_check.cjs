@@ -40,6 +40,16 @@ async function check(withGraph) {
   assert(!d.querySelector('#no-matches').hidden);
   search.value = ''; search.dispatchEvent(new w.Event('input'));
   assert.equal(visible().length, rows.length);
+  for (const excerpt of d.querySelectorAll('.source-excerpt')) {
+    assert(!excerpt.open);
+    assert.equal(excerpt.querySelectorAll('script, img').length, 0);
+    const code = excerpt.querySelector('code');
+    assert(code && code.textContent.length > 0);
+    excerpt.querySelector('summary').click();
+    assert(excerpt.open);
+    excerpt.querySelector('summary').click();
+    assert(!excerpt.open);
+  }
   const status = rows[0].dataset.status;
   d.querySelector('[data-filter-state="'+status+'"]').click();
   assert.equal(visible().length, rows.filter(r => r.dataset.status === status).length);

@@ -62,7 +62,7 @@ def _clean_description(desc: str, max_len: int = 200) -> str:
     return desc
 
 
-def generate_html_report(project_name: str, sbom_file: str, json_report_file: str, html_file: str) -> None:
+def generate_html_report(project_name: str, sbom_file: str, json_report_file: str, html_file: str, *, findings_override=None) -> None:
     """
     Generate standalone HTML report with dependency bubble graph and vulnerabilities table.
     """
@@ -71,8 +71,11 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
 
     with open(sbom_file, "r", encoding="utf-8") as f:
         sbom = json.load(f)
-    with open(json_report_file, "r", encoding="utf-8") as f:
-        vulns = json.load(f)
+    if findings_override is None:
+        with open(json_report_file, "r", encoding="utf-8") as f:
+            vulns = json.load(f)
+    else:
+        vulns = findings_override
 
     # stats per purl
     per_purl = defaultdict(
@@ -742,8 +745,12 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         for opinion in v.get("ai_reviews", []):
             provider = html_lib.escape(str(opinion.get("provider", "")))
             model = html_lib.escape(str(opinion.get("model", "")))
-            html += f'<details class="ai-opinion"><summary>AI second opinion · {provider}</summary><p>{model} · Static verdict unchanged</p>'
-            if opinion.get("status") == "completed":
+            preview = opinion.get("status") == "preview"
+            heading = "AI request preview" if preview else "AI second opinion"
+            html += f'<details class="ai-opinion"><summary>{heading} | {provider}</summary><p>{model} | Static verdict unchanged</p>'
+            if preview:
+                html += '<p>Local preview only. No API request has been sent.</p>'
+            elif opinion.get("status") == "completed":
                 html += '<p><strong>' + html_lib.escape(str(opinion.get("assessment", ""))) + '</strong></p>'
                 html += '<p>' + html_lib.escape(str(opinion.get("summary", ""))) + '</p>'
                 text = str(opinion.get("reasoning", "")) + "\nEvidence: " + ", ".join(opinion.get("evidence_ids", []))
@@ -752,6 +759,17 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
             else:
                 html += '<p>Review unavailable: ' + html_lib.escape(str(opinion.get("error", "unknown error"))) + '</p>'
             if opinion.get("evidence_packet"):
+                for entry in opinion["evidence_packet"].get("evidence", []):
+                    value = entry.get("value") or {}
+                    if entry.get("kind") != "source_excerpt" or not isinstance(value, dict) or not isinstance(value.get("code"), str):
+                        continue
+                    label = f"Source {entry.get('id', '')}: {value.get('symbol', '')}"
+                    location = f"{value.get('relative_path', '')}:{value.get('excerpt_start_line', '')}-{value.get('excerpt_end_line', '')}"
+                    scope = "Whole definition" if value.get("whole_definition") else "Partial context"
+                    html += '<details class="source-excerpt"><summary>' + html_lib.escape(label) + '</summary>'
+                    html += '<p>' + html_lib.escape(location + " | " + scope + " | " + str(value.get("provenance", ""))) + '</p>'
+                    html += '<pre><code>' + html_lib.escape(value["code"]) + '</code></pre>'
+                    html += '<p>File SHA256: <code>' + html_lib.escape(str(value.get("file_sha256", ""))) + '</code></p></details>'
                 html += '<details><summary>Evidence sent to provider</summary><pre>' + html_lib.escape(json.dumps(opinion["evidence_packet"], ensure_ascii=False, indent=2)) + '</pre></details>'
             html += '</details>'
         html += "</td>\n"

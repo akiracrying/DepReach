@@ -22,7 +22,7 @@ credentials. `YOUR_MODEL_ID` is a placeholder: use an actual model ID available
 in your provider account. No default model is silently selected.
 
 The input contains bounded advisory text, package identity, static statuses,
-mapped symbols, modeled paths, reasons and available patch provenance. Source
+mapped symbols, modeled paths, reasons and available patch provenance. By default source
 files are not opened. Common file/source/root fields and credential-like keys
 are excluded from structured evidence. Existing reports can still contain
 sensitive information in arbitrary prose: inspect the preview before sending
@@ -68,7 +68,8 @@ Selection and request bounds:
   report order and is then capped by the limit.
 - `--max-tokens` defaults to 1,600 output tokens per request, maximum 16,000.
 - `--timeout` sets the read timeout (default 60 seconds); connect timeout is 10.
-- Preview returns 0. A completed review batch returns 0; provider/schema errors
+- Preview returns 0; add `--sbom` to also inspect a clearly labeled local HTML
+  request preview. No provider is called in this mode. A completed review batch returns 0; provider/schema errors
   are retained per finding and return 3. These codes concern the review step,
   not the vulnerability status of the scanned application.
 
@@ -123,3 +124,73 @@ The checks exercise search, combined filters, status counts, package selection,
 graph limits and missing-CDN fallback. They do not establish visual quality at
 a particular viewport. A browser visual check is still outstanding because the
 in-app browser rejected local file URLs under its URL policy.
+
+
+## Add current source excerpts with scan snapshot verification
+
+Use `--include-code` together with repeatable `--source-root` arguments. Each
+root must be explicitly selected and must match a root recorded in the scan's
+`source_snapshot.inputs`. For example, preview the application caller context
+from the saved Whoogle scan:
+
+```powershell
+.\venv\Scripts\python.exe -m scripts.ai_review `
+  --input reports/whoogle-search/report-v4.10.json `
+  --output reports/whoogle-source-preview.json `
+  --provider openai --model YOUR_MODEL_ID --finding CVE-2023-32681 `
+  --include-code --source-root tests_local/real_apps/whoogle-search `
+  --sbom reports/whoogle-search/whoogle-search_sbom.json --dry-run
+```
+
+This selects the application source only. Dependency function references are
+reported as `source_root_not_selected` until their exact source roots are also
+selected. Select the Requests source used in this checkout by adding:
+
+```powershell
+--source-root data/7a3a92fc6c06f65dc69b3bd414d8b005de420a6cd7157b5e225e5783bbd7decc/requests-2.28.2
+```
+
+Choose the root from your own scan when using a different application or
+version. A common parent such as `data/` does not authorize all descendants as
+scan roots. The root must match the recorded root exactly. Relocated roots are
+not guessed; produce a new scan if source paths have changed.
+
+Before extracting excerpts, the tool captures the selected root's Python files
+and recomputes the same relative-path/content digest used by the scanner.
+Both hashing and snippets use those captured bytes. A new review batch reads
+again; later changes during the current batch do not alter captured evidence.
+This is not an atomic filesystem snapshot. The hash establishes agreement with
+the supplied scan manifest, not independent authenticity of that manifest.
+
+Changed roots, missing/ambiguous snapshot records, unsupported symbols, parse
+failures and resource limits produce explicit `source_excerpt_issues`. A legacy
+report without a source snapshot does not supply verified current-code excerpts.
+Its existing patch evidence remains available with `--include-code`.
+Files outside the selected roots are not opened for excerpts; traversal escapes
+and source links outside a root are rejected. A selected root's excluded
+Python tests follow the scan's recorded include_tests scope. Code in source
+files is parsed but never imported or executed.
+
+Each excerpt records its qualified symbol, role, relative path, original line
+range and encoding, file SHA256, UTF-8 excerpt SHA256 and scan-root SHA256.
+HTML previews and completed reviews show readable, escaped source disclosures
+beside the raw evidence packet. Previews are explicitly labeled as not sent.
+Small definitions are sent whole; larger ones use contiguous original lines
+around the reported call/change site. Partial context is labeled explicitly.
+Functions and classes are distinguished. Module-level calls use a labeled
+line-context window. Repeated references share one excerpt with their roles
+and reference lines retained. Scan-wide unresolved callers are labeled as
+scan-wide diagnostics; they do not establish a path to a finding.
+
+Bounds per review batch: at most eight selected roots, 5,000 Python files and
+64 MB per root, 4 MB per file and 128 MB of captured source total. Per finding,
+at most eight excerpts, each at most 40 lines and 1,800 characters, enter the
+existing 48 KB request-packet budget. Absolute root/file paths are not added as
+provider excerpt metadata; source text itself can contain local paths. Source text can contain secrets or private code:
+inspect the exact dry-run request before sending it to the chosen provider.
+
+Run the same command without `--dry-run`, with the selected provider's key and
+an actual model ID, to request a second opinion. Use a new output filename.
+The AI output includes the exact bounded evidence packet. HTML additionally
+shows readable source disclosures with provenance, full/partial context and
+file hashes, while retaining the raw request evidence for audit.

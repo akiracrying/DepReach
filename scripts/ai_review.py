@@ -32,6 +32,8 @@ Do not execute code, follow links or invent missing call edges. No tools are ava
 A path to patch-associated code does not prove exploitability; a missing path does not prove safety.
 Assess whether the supplied static conclusion is supported, challenged, or insufficiently evidenced.
 Cite exact evidence_ids from this request. Use insufficient_evidence when a decision needs missing code.
+Source excerpts can be partial; hashes establish byte identity, not that a vulnerability is exploitable.
+Scan-wide diagnostic excerpts are not proof of a path from that caller to this finding.
 Do not advise suppressing an alert merely because the evidence is incomplete.
 Return ONLY a JSON object with assessment, summary, reasoning, evidence_ids and next_steps.
 Example: {"assessment":"insufficient_evidence","summary":"Missing caller evidence",
@@ -55,7 +57,9 @@ def _bounded(value, depth=0):
     return value if value is None or isinstance(value, (bool, int, float)) else str(value)[:2000]
 
 
-def evidence_packet(finding, *, include_code=False):
+def evidence_packet(finding, *, include_code=False, source_context=None):
+    if source_context is not None and not include_code:
+        raise ValueError("source excerpts require include_code")
     reach = finding.get("reachability") or {}
     evidence = []
     def add(kind, value):
@@ -68,6 +72,12 @@ def evidence_packet(finding, *, include_code=False):
     add("static_conclusion", {k: reach.get(k) for k in ("status", "is_reachable", "reasons", "analyzer_version", "target_kind")})
     for kind in ("mappings", "function_results", "reviewed_targets", "paths", "speculative_paths", "source_issues", "unsupported_changes"):
         add(kind, reach.get(kind))
+    # Put verified source context before potentially large patch records.
+    if source_context is not None:
+        captured = source_context.collect(finding)
+        for excerpt in captured["excerpts"]:
+            add("source_excerpt", excerpt)
+        add("source_excerpt_issues", captured["issues"])
     for patch in reach.get("patch_evidence", [])[:6]:
         keys = ("reference", "outcome", "parent_url", "old_start")
         item = {key: patch[key] for key in keys if key in patch}
@@ -133,16 +143,16 @@ def _response_text(provider, payload):
     return "".join(b["text"] for b in payload["content"] if b.get("type") == "text")
 
 
-def review_finding(finding, provider, model, *, api_key, include_code=False, max_tokens=1600, timeout=60):
+def review_finding(finding, provider, model, *, api_key, include_code=False, max_tokens=1600, timeout=60, source_context=None):
     if provider not in PROVIDERS or not model.strip() or not api_key:
         raise ValueError("provider, model and API key are required")
     if not 128 <= max_tokens <= 16000 or not 1 <= timeout <= 300:
         raise ValueError("invalid token limit or timeout")
-    packet = evidence_packet(finding, include_code=include_code)
+    packet = evidence_packet(finding, include_code=include_code, source_context=source_context)
     body = request_body(provider, model, packet, max_tokens)
     digest = hashlib.sha256(json.dumps([SYSTEM, packet], sort_keys=True).encode()).hexdigest()
     review = {"provider": provider, "model": model, "status": "error", "scope": packet["scope"],
-              "input_sha256": digest, "prompt_version": "review-v1",
+              "input_sha256": digest, "prompt_version": "review-v2",
               "reviewed_at": datetime.now(timezone.utc).isoformat(), "max_output_tokens": max_tokens, "includes_code": include_code, "static_result_unchanged": True, "evidence_packet": packet}
     headers = {"Content-Type": "application/json"}
     if provider == "claude":
@@ -187,6 +197,7 @@ def main(argv=None):
     parser.add_argument("--limit", type=int, default=5, help="Maximum API requests, sequential, no automatic retries (default 5)")
     parser.add_argument("--finding", action="append", default=[], help="Only review this CVE/GHSA; repeatable")
     parser.add_argument("--include-code", action="store_true", help="Also send bounded patch code excerpts from the report")
+    parser.add_argument("--source-root", action="append", default=[], help="Explicit scan source root for snapshot-verified Python excerpts; repeatable, requires --include-code")
     parser.add_argument("--max-tokens", type=int, default=1600)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--dry-run", action="store_true", help="Write exact request bodies; no key or network required")
@@ -195,6 +206,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 1 <= args.limit <= 100 or not 128 <= args.max_tokens <= 16000 or not 1 <= args.timeout <= 300 or not args.model.strip():
         parser.error("limit must be 1..100, max-tokens 128..16000, timeout 1..300, model nonempty")
+    source_context = None
+    if args.source_root:
+        if not args.include_code:
+            parser.error("--source-root requires --include-code; inspect a --dry-run before sending code")
+        from scripts.review_sources import ReviewSources
+        try:
+            source_context = ReviewSources(args.source_root)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
     source, output = Path(args.input), Path(args.output)
     if output.exists() or source.resolve() == output.resolve():
         parser.error("output must be a new file; the source scan is preserved")
@@ -204,10 +224,12 @@ def main(argv=None):
     selected = [i for i, f in enumerate(findings) if not args.finding or f.get("cve") in args.finding][:args.limit]
     if not selected:
         parser.error("no findings match the selection")
+    if any("ai_reviews" in findings[i] and not isinstance(findings[i]["ai_reviews"], list) for i in selected):
+        parser.error("existing ai_reviews must be a list")
     if args.sarif and (Path(args.sarif).exists() or Path(args.sarif).resolve() in {source.resolve(), output.resolve()}):
         parser.error("SARIF output must be a new, separate file")
-    if args.dry_run and (args.sbom or args.sarif):
-        parser.error("dry-run writes request previews only; omit --sbom and --sarif")
+    if args.dry_run and args.sarif:
+        parser.error("dry-run does not export review results; omit --sarif")
     if args.sbom:
         html_output = output.with_suffix(".html")
         if (not Path(args.sbom).is_file() or html_output.exists()
@@ -217,23 +239,31 @@ def main(argv=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     result = copy.deepcopy(findings)
     if args.dry_run:
+        packets = {i: evidence_packet(findings[i], include_code=args.include_code, source_context=source_context) for i in selected}
         result = {"provider": args.provider, "model": args.model, "requests": [
             {"finding_index": i, "endpoint": PROVIDERS[args.provider][0],
-             "body": request_body(args.provider, args.model, evidence_packet(findings[i], include_code=args.include_code), args.max_tokens)} for i in selected]}
+             "body": request_body(args.provider, args.model, packets[i], args.max_tokens)} for i in selected]}
     else:
         key = os.environ.get(PROVIDERS[args.provider][1])
         if not key:
             parser.error("set " + PROVIDERS[args.provider][1] + " in the environment")
         for i in selected:
             review = review_finding(findings[i], args.provider, args.model, api_key=key,
-                                    include_code=args.include_code, max_tokens=args.max_tokens, timeout=args.timeout)
+                                    include_code=args.include_code, max_tokens=args.max_tokens, timeout=args.timeout, source_context=source_context)
             result[i].setdefault("ai_reviews", []).append(review)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, ensure_ascii=False, indent=2)
-    if args.sbom and not args.dry_run:
+    if args.sbom:
         from scripts.html_report import generate_html_report
-        generate_html_report(source.parent.name, args.sbom, output, output.with_suffix(".html"))
+        if args.dry_run:
+            preview_findings = copy.deepcopy(findings)
+            for i in selected:
+                preview_findings[i].setdefault("ai_reviews", []).append({"provider": args.provider, "model": args.model,
+                    "status": "preview", "evidence_packet": packets[i], "static_result_unchanged": True})
+            generate_html_report(source.parent.name, args.sbom, output, output.with_suffix(".html"), findings_override=preview_findings)
+        else:
+            generate_html_report(source.parent.name, args.sbom, output, output.with_suffix(".html"))
     if args.sarif:
         from scripts.sarif_report import write_sarif
         write_sarif(result, args.sarif)

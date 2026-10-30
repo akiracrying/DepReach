@@ -46,6 +46,11 @@ jobs:
               "severity": "HIGH" if i % 2 else "CRITICAL", "description": "A sample finding",
               "reachability": {"status": state, "reasons": ["fixture_reason"]}}
               for i, state in enumerate(states)]
+          findings[0]["ai_reviews"] = [{"provider": "preview", "model": "not_called", "status": "preview",
+              "evidence_packet": {"evidence": [{"id": "e1", "kind": "source_excerpt", "value": {
+                  "symbol": "fixture.function", "relative_path": "fixture.py", "whole_definition": True,
+                  "code": 'def function(): return "<script>bad()</script>"', "provenance": "ui_fixture_only",
+                  "excerpt_start_line": 1, "excerpt_end_line": 1, "file_sha256": "fixture"}}]}}]
           components = [{"name": "package" + str(i), "version": "1", "purl": "pkg:npm/package" + str(i) + "@1"} for i in range(180)]
           (output / "sbom.json").write_text(json.dumps({"components": components}), encoding="utf-8")
           (output / "findings.json").write_text(json.dumps(findings), encoding="utf-8")

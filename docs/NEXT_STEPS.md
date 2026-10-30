@@ -70,9 +70,11 @@ Remaining checks and work:
 1. Verify actual provider calls using a selected account/model and credentials;
    current tests verify mocked wire contracts, not live account access.
 2. Inspect report screenshots on desktop/mobile; local file URL access was
-   rejected by browser policy. DOM behavior is checked locally and in a new
-   CI job, whose remote run remains unverified until publication.
-3. Extend review evidence with versioned caller/function excerpts only under
-   explicit data selection; retain the preview and evidence provenance.
+   rejected by browser policy. DOM behavior is checked locally and in a
+   CI job; commit 962c986 passed that remote job. Visual viewport checks remain
+   outstanding.
+3. Verify the new snapshot-matched caller/function excerpt workflow in a live
+   provider account. Explicit-root selection, preview, source hashes, bounded
+   excerpts and readable local HTML preview are implemented and locally tested.
 4. Resume Node module resolution validation and the remaining ten analysis
    requirements above; AI opinions do not replace those implementations.

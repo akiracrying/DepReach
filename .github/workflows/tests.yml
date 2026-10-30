@@ -18,6 +18,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: pip install -e '.[dev,node]'
       - run: python -m pytest tests -q
       - run: python -m scripts.evaluate_corpus --offline --output reports/ci-corpus --min-coverage 0.70
@@ -60,3 +63,29 @@ jobs:
         run: npm install --prefix reports/report-dom-tools --ignore-scripts --no-audit --no-fund jsdom@26.1.0 d3@7.9.0
       - name: Verify filters and optional graph without network resources
         run: node tests/report_dom_check.cjs reports/ui-fixture/report.html
+
+  node_resolution:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: pip install -e '.[dev,node]'
+      - name: Compare captured module paths with Node without loading targets
+        env:
+          DEPREACH_REQUIRE_NODE_ORACLE: '1'
+          DEPREACH_NODE_ORACLE_REPORT: reports/node-oracle.jsonl
+        run: python -m pytest tests/test_node_resolution.py tests/test_node_imports.py -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-resolution-${{ matrix.node }}
+          path: reports/node-oracle.jsonl
+          if-no-files-found: error

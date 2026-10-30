@@ -229,7 +229,7 @@ def npm_sbom(inventory):
             "components": components, "dependencies": [{"ref": name, "dependsOn": sorted(targets)} for name, targets in sorted(adjacency.items())]}
 
 
-def scan_npm_inventory(inventory, output_dir, source_context=None):
+def scan_npm_inventory(inventory, output_dir, source_context=None, *, module_resolution=None):
     """Run or resume SCA using an already captured inventory and SBOM."""
     from scripts.composition_analysis import check_vulnerabilities_from_sbom
     from scripts.reachability_result import result
@@ -241,7 +241,13 @@ def scan_npm_inventory(inventory, output_dir, source_context=None):
         finding["reachability"] = result("unsupported", reasons=["javascript_reachability_not_implemented"],
             analyzer_version="npm-inventory-v2", ecosystem="npm", inventory_scope=inventory["selection"],
             source_manifest=inventory.get("source_manifest"), syntax_manifest=inventory.get("syntax_manifest"),
-            sources_complete=source_context["complete"] if source_context else None)
+            sources_complete=source_context["complete"] if source_context else None,
+            module_resolution_manifest=inventory.get("module_resolution_manifest"))
+        if module_resolution is not None:
+            finding["reachability"]["module_lookup_summary"] = {
+                "scope": "scan_wide_candidates", "counts": module_resolution["counts"],
+                "input_sha256": module_resolution["input_sha256"],
+                "binding_resolution_implemented": False, "call_graph_implemented": False}
     (output / "vulnerabilities.json").write_text(json.dumps(findings, indent=2), encoding="utf-8")
     write_sarif(findings, str(output / "vulnerabilities.sarif"), project_uri=inventory["root"])
     generate_html_report(inventory["project_name"], str(output / "sbom.json"),
@@ -258,6 +264,8 @@ def main(argv=None):
     parser.add_argument("--target-os")
     parser.add_argument("--target-cpu")
     parser.add_argument("--scan", action="store_true", help="Query configured local VDB and export findings; JS/TS reachability remains unsupported")
+    parser.add_argument("--resolve-imports", action="store_true", help="Audit Node module path candidates; implies --syntax and --sources, not call reachability")
+    parser.add_argument("--condition", action="append", default=[], help="Additional Node package export condition for --resolve-imports")
     parser.add_argument("--syntax", action="store_true", help="Extract JS/TS AST facts, including dependency sources; requires the node extra")
     parser.add_argument("--sources", action="store_true", help="Fetch and verify locked npm tarballs without installing packages")
     parser.add_argument("--source-cache", default="data/npm-archives")
@@ -265,6 +273,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("jobs must be positive")
+    if args.condition and not args.resolve_imports:
+        parser.error("--condition requires --resolve-imports")
+    args.syntax = args.syntax or args.resolve_imports
     args.sources = args.sources or args.syntax
     if args.syntax:
         from scripts.javascript_syntax import _parser
@@ -277,6 +288,7 @@ def main(argv=None):
                                        target_os=args.target_os, target_cpu=args.target_cpu)
         output = Path(args.output)
         output.mkdir(parents=True, exist_ok=False)
+        inventory["scan_output_root"] = str(output.resolve())
         (output / "inventory.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
         (output / "sbom.json").write_text(json.dumps(npm_sbom(inventory), indent=2), encoding="utf-8")
     except (ValueError, OSError) as exc:
@@ -295,20 +307,32 @@ def main(argv=None):
     syntax_context = None
     if args.syntax:
         from scripts.javascript_syntax import audit_javascript_sources
-        syntax_context = audit_javascript_sources(args.input, source_context, output / "syntax")
+        syntax_context = audit_javascript_sources(args.input, source_context, output / "syntax", exclude_roots=[output])
         inventory["syntax_manifest"] = str((output / "syntax/summary.json").resolve())
         (output / "inventory.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
         (output / "sbom.json").write_text(json.dumps(npm_sbom(inventory), indent=2), encoding="utf-8")
         print(f"JS/TS syntax: {syntax_context['counts']['modules']} files; {syntax_context['counts']['functions']} functions; {len(syntax_context['issues'])} parse issues")
+    resolution_context = None
+    if args.resolve_imports:
+        from scripts.node_imports import audit_node_imports
+        try:
+            resolution_context = audit_node_imports(inventory, source_context, output / "module-resolution", conditions=args.condition)
+        except (ValueError, OSError, RuntimeError) as exc:
+            parser.error("Node module lookup failed: " + str(exc))
+        inventory["module_resolution_manifest"] = str((output / "module-resolution/summary.json").resolve())
+        (output / "inventory.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
+        (output / "sbom.json").write_text(json.dumps(npm_sbom(inventory), indent=2), encoding="utf-8")
+        print("Node module candidates: " + json.dumps(resolution_context["counts"]["by_status"], sort_keys=True))
     print(f"npm instances: {len(inventory['instances'])}; edges: {len(inventory['edges'])}; omitted: {len(inventory['omitted'])}; issues: {len(inventory['issues'])}")
     if args.scan:
-        findings = scan_npm_inventory(inventory, output, source_context)
+        findings = scan_npm_inventory(inventory, output, source_context, module_resolution=resolution_context)
         print(f"Package/advisory findings: {len(findings)}; JavaScript/TypeScript reachability is unsupported.")
         if findings:
             return 3
     print("JavaScript/TypeScript reachability is not implemented yet.")
     return 0 if (inventory["tree_complete"] and (source_context is None or source_context["complete"])
-                 and (syntax_context is None or syntax_context["syntax_complete"])) else 3
+                 and (syntax_context is None or syntax_context["syntax_complete"])
+                 and (resolution_context is None or resolution_context["candidate_lookup_complete"])) else 3
 
 
 if __name__ == "__main__":

@@ -316,3 +316,50 @@ application coverage or the other outstanding analysis requirements.
 Live account/provider calls and visual viewport checks are still outstanding.
 All ten original analysis requirements remain open; source-backed AI review is
 an additional triage facility, not completion of non-Python reachability.
+
+
+## Candidate Node module lookup checkpoint, 2026-10-30
+
+- The former untracked node_resolution.py prototype is now tested and connected
+  through scripts.node_imports and npm --resolve-imports (implies sources/syntax).
+  CJS extension/main/index, ESM exact targets, exports/imports conditions and
+  patterns, aliases, nested versions and workspace real-path boundaries retain
+  installation context. Lookup is explicitly distinct from binding/invocation.
+- Node comparisons exposed and fixed ignored node-addons conditions, arrays
+  beginning with null, trailing-separator/profile differences and CommonJS
+  imports-to-builtin behavior. Duplicate package.json properties follow Node's
+  last-value behavior with warnings; this resolves bcrypt-nodejs's harmless
+  repeated author property without weakening lockfile duplicate-key checks.
+- Supported source bytes are captured once for parsing and lookup. Source
+  identities and existing package.json digests are checked, with explicit
+  byte/file/module/output bounds. Fresh report roots inside the application are
+  excluded from application syntax/capture and recorded in scope. Archive roots
+  are still analyzed separately. Engine-source digest and parser versions enter
+  the candidate-audit fingerprint.
+- Local comparisons passed with Node 22.19.0 and bundled Node 24.22.1, without
+  loading target modules or hooks. The workspace symlink oracle is skipped on
+  this Windows host because creation privileges are unavailable; static
+  workspace cases pass and Linux CI exercises the actual symlink case.
+- 420 tests passed, one platform skip (reports/pytest-node-imports-full-20261030-03).
+  Explicit Node 22/24 CI jobs retain oracle comparisons; the Python matrix now
+  selects Node 22 so comparison tests do not silently skip on older runtimes.
+- Full npm CLI on clean NodeGoat c5cb68a7084e4ae7dcc60e6a98768720a81841e8:
+  396 verified source instances, 345 archive-cache hits, zero source issues;
+  1,680 physical modules / 1,763 installation contexts, 5,525 path candidates.
+  Results: 4,807 files, 520 built-ins, three type-only, 195 unresolved; no parse
+  or output-limit issues. Root application: 44 file targets, four built-ins,
+  two unresolved candidates. All 5,494 CommonJS candidates need binding checks.
+- Historical and freshly extracted sources produced identical candidate
+  fingerprints, captures and counts under the same final engine. Evidence:
+  reports/nodegoat-resolution-scan-v1/module-validation.json; final module audit
+  under module-resolution-current, and reports/nodegoat-module-resolution-v4.
+- SCA remains 47 package/advisory findings, all unsupported for JS reachability;
+  exit 3 is expected. HTML shows a separate scan-wide lookup summary. DOM checks
+  passed on the real 47-finding report with and without local D3. SCA/rendering
+  was resumed from completed source/module artifacts for the final UI fields;
+  no database update or target application execution occurred.
+
+Next work is contextual JS/TS binding/export and function-call modeling, then
+immutable fix-to-symbol mapping. The ten original requirements, live provider
+calls and viewport review remain open. This checkpoint is not JS reachability
+completion or an ecosystem accuracy measurement.

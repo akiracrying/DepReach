@@ -132,3 +132,113 @@ reducing intermediate JSON files from 115,159,003 to 69,768,676 bytes. The
 summary remains formatted for review; per-module machine-readable facts use
 compact JSON and explicit markers only for actually truncated text excerpts.
 The final full test run is `reports/pytest-node-final-02` (327 passed).
+
+
+## Candidate module lookup checkpoint, 2026-10-30
+
+The current checkout adds Node module path analysis; this feature is not in the
+published 0.2.0 package. It does not yet resolve CommonJS bindings, exported
+values or function calls. In particular, a syntactic require can be shadowed.
+A resolved file path does not change an npm finding's unsupported reachability.
+
+Run the full pipeline from C:/Projects/DepReach with a fresh output directory:
+
+```powershell
+$env:VDB_HOME = 'C:\Projects\DepReach\data\vdb-real-apps'
+$env:VDB_CACHE = 'C:\Projects\DepReach\data\vdb-real-apps-cache'
+.\venv\Scripts\python.exe -m scripts.npm_inventory `
+  --input tests_local/real_apps/NodeGoat --output reports/nodegoat-my-module-run `
+  --omit-dev --target-os linux --target-cpu x64 --resolve-imports --scan
+```
+
+`--resolve-imports` implies source verification and syntax extraction. It adds
+`module-resolution/imports.jsonl` and `module-resolution/summary.json`. Each
+record preserves importer instance, lexical owner, source hash, byte/line span,
+lookup mode, target instance/PURL/file hash or an explicit blocker. Re-exports,
+type-only imports, nonliteral candidates and unverified CommonJS calls remain
+distinct. Global module lookup counts are separate from vulnerability statuses.
+JSON/SARIF findings retain the module-resolution manifest; fresh scans also
+include a scan-wide module lookup summary in the HTML report.
+
+To audit sources already captured by an earlier scan, without downloads, SCA
+queries, package installation or application execution:
+
+```powershell
+.\venv\Scripts\python.exe -m scripts.node_imports `
+  --inventory reports/nodegoat-syntax-v1/inventory.json `
+  --sources reports/nodegoat-syntax-v1/dependency-sources.json `
+  --output reports/nodegoat-my-lookup
+```
+
+A completed candidate lookup returns 0. Explicit unknown/unsupported lookup,
+syntax/source gaps or output omissions return 3. This exit code concerns lookup
+coverage, not whether the application is vulnerable. The full --scan pipeline
+continues to return 3 for npm vulnerabilities with unsupported JS reachability.
+
+### Modeled profile and boundaries
+
+- Modern Node 22/24 default conditions: node, node-addons, module-sync, plus
+  require/import as appropriate. Additional conditions can be passed with
+  repeatable --condition values; npm CLI requires --resolve-imports for them.
+- Node-style CommonJS extension/main/index lookup, ESM exact relative/subpath
+  targets, package exports/imports, ordered conditions, wildcard specificity,
+  arrays and null blocking. Missing files after a valid exports target do not
+  trigger a guessed fallback to another target.
+- Versioned installation locations remain separate even when identical archive
+  sources share one syntax parse. Default workspace real paths are used only
+  when the corresponding source context is present; missing real paths remain
+  unsupported. Conflicting instance/source identities are rejected.
+- Package.json follows Node's last-value semantics for duplicate properties,
+  retaining nonblocking warnings. In the real bcrypt-nodejs package, a repeated
+  author field previously prevented a valid main lookup. Lockfile and root
+  inventory JSON retain their stricter duplicate-key input validation.
+- Captured bytes supply parsing, source hashes and module metadata. Exact source
+  identity and recorded package.json hashes are checked. Supported source bytes,
+  virtual file existence, engine-source digest, parser versions and profile
+  enter the audit fingerprint. No source package code or loader executes.
+- Output directories created inside the application are excluded from its source
+  scope; dependency roots are still analyzed separately. Excluded roots are
+  recorded. Other pre-existing directories remain in the requested input scope.
+- Bounds: 16 MB per supported source file, 128 MB per root, 256 MB of captured
+  source bytes, 20,000 files per root, 20,000 module instances and 50,000 emitted
+  reference records. Count/resource omissions are explicit, not negative results.
+
+Custom loaders, NODE_PATH/global folders, preserve-symlinks overrides, browser
+bundler rules and TypeScript compiler path/extension mapping are not modeled.
+Encoded/URL-like specifiers and targets remain unsupported. File paths match
+captured names; general case/Unicode normalization is not modeled. Windows and
+POSIX trailing-separator behavior is distinguished, with an explicit loader-
+format boundary where appropriate. Native/JSON/TypeScript targets retain their
+format boundaries. File lookup alone does not validate loadability or exports.
+Only recognized syntax candidates are audited; loader aliases and computed
+external mechanisms still require binding/dataflow models.
+
+### Real application evidence
+
+The unchanged NodeGoat input and earlier inventory selection yielded:
+
+- 396/396 verified source instances, zero source issues.
+- 1,680 physical JS/TS modules parsed; 1,763 module contexts preserve repeated
+  installation instances. No parse issues or count/output omissions.
+- 5,525 lookup candidates: 4,807 file targets, 520 built-ins, three type-only,
+  195 unresolved (32 nonliteral, 81 absent package instances, 82 absent relative
+  files). 5,494 CommonJS syntax candidates still need binding verification.
+- 47 package/advisory findings remain unsupported for JS reachability.
+
+Artifacts: reports/nodegoat-resolution-scan-v1 and the standalone audits under
+reports/nodegoat-module-resolution-v3. These counts measure path lookup over the
+captured scope, not vulnerability precision or actual executed application paths.
+Unresolved references in unused library helpers must not later become global
+blockers for every CVE; contextual call-graph work remains necessary.
+
+Independent tests compare results against createRequire().resolve and
+import.meta.resolve plus an explicit filesystem check. Target modules never
+load; importer real paths match Node's default symlink behavior. Tests also cover
+version nesting, aliases, imports/exports edge cases and source mutations.
+Dedicated CI jobs use Node 22 and 24 and retain oracle comparisons as artifacts.
+Windows may skip the symlink oracle when the host lacks creation privileges;
+Linux CI covers it. Visual viewport checks and live AI calls remain separate.
+
+Reference contracts: [Node CommonJS lookup](https://nodejs.org/docs/latest-v22.x/api/modules.html#all-together),
+[package entry points and conditions](https://nodejs.org/api/packages.html),
+[ESM resolution](https://nodejs.org/api/esm.html#resolution-and-loading-algorithm).

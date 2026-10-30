@@ -207,6 +207,15 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
         f'<button type="button" class="package-chip pkg-filter" data-package="{html_lib.escape(str(st["package"] or purl), quote=True)}">'
         f'{html_lib.escape(str(st["package"] or purl))} · {st["vulnCount"]}</button>'
         for purl, st in sorted(per_purl.items(), key=lambda item: (-item[1]["vulnCount"], item[0])))
+    module_lookup_html = ""
+    module_lookup = next((v.get("reachability", {}).get("module_lookup_summary") for v in vulns
+                          if isinstance(v.get("reachability"), dict) and v["reachability"].get("module_lookup_summary")), None)
+    if isinstance(module_lookup, dict):
+        lookup_counts = module_lookup.get("counts", {})
+        status_counts = lookup_counts.get("by_status", {})
+        statuses = " | ".join(html_lib.escape(str(key) + ": " + str(value)) for key, value in sorted(status_counts.items()))
+        module_lookup_html = '<details class="card"><summary>JS/TS module lookup | scan-wide candidates</summary><p>' + statuses + '</p>'
+        module_lookup_html += '<p>CommonJS bindings are unverified. Call-graph construction and vulnerability reachability are pending.</p></details>'
     project_name = html_lib.escape(project_name)
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -601,6 +610,7 @@ def generate_html_report(project_name: str, sbom_file: str, json_report_file: st
     </div>
 
     <div class="summary-grid">{summary_cards}</div>
+    {module_lookup_html}
     <p>Static paths and incomplete analysis are shown separately. Select a count to filter findings.</p>
     <details class="card" id="dependency-map">
       <summary>Explore dependencies · {total_components} installed components</summary>

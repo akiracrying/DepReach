@@ -158,7 +158,9 @@ class JavaScriptSyntax:
                                 **_display(node, self.raw, "statement"), "type_only": any(c.type == "type" for c in node.children), **_span(node)})
             if node.type == "export_statement":
                 exports.append({"owner": owner, "kind": "esm", **_display(node, self.raw, "statement"),
-                                "source": _literal(node.child_by_field_name("source"), self.raw), **_span(node)})
+                                "source": _literal(node.child_by_field_name("source"), self.raw),
+                                "has_source": node.child_by_field_name("source") is not None,
+                                "type_only": any(c.type == "type" for c in node.children), **_span(node)})
             if node.type in {"variable_declarator", "assignment_expression"}:
                 left = node.child_by_field_name("name") if node.type == "variable_declarator" else node.child_by_field_name("left")
                 right = node.child_by_field_name("value") if node.type == "variable_declarator" else node.child_by_field_name("right")
@@ -196,16 +198,18 @@ def parse_javascript(file, raw=None):
     return JavaScriptSyntax(str(path), raw, language, parser.parse(raw), [], parser)
 
 
-def javascript_files(root, include_tests=False):
+def javascript_files(root, include_tests=False, *, exclude_roots=()):
     root = Path(root).resolve()
     if not root.is_dir():
         raise ValueError(f"JavaScript source directory does not exist: {root}")
     def walk_error(error):
         raise error
+    excluded = tuple(Path(path).resolve() for path in exclude_roots)
     for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
         dirs[:] = sorted(name for name in dirs if name not in {"node_modules", "venv", "__pycache__"}
                          and not name.startswith(".") and (include_tests or name not in {"test", "tests", "examples", "docs"})
-                         and not Path(directory, name).is_symlink())
+                         and not Path(directory, name).is_symlink()
+                         and not any(Path(directory, name).resolve() == p or p in Path(directory, name).resolve().parents for p in excluded))
         for name in sorted(files):
             path = Path(directory, name)
             if path.suffix.lower() in EXTENSIONS and not path.is_symlink():
@@ -214,7 +218,7 @@ def javascript_files(root, include_tests=False):
                 yield path
 
 
-def audit_javascript_sources(project, source_context, output_dir, *, include_tests=False):
+def audit_javascript_sources(project, source_context, output_dir, *, include_tests=False, exclude_roots=()):
     destination = Path(output_dir).resolve()
     destination.mkdir(parents=True, exist_ok=False)
     roots = {str(Path(project).resolve()): ["<application>"]}
@@ -222,7 +226,7 @@ def audit_javascript_sources(project, source_context, output_dir, *, include_tes
         roots.setdefault(source["source"], []).append(source["location"])
     modules, issues = [], []
     for root, instances in sorted(roots.items()):
-        for path in javascript_files(root, include_tests):
+        for path in javascript_files(root, include_tests, exclude_roots=exclude_roots if Path(root).resolve() == Path(project).resolve() else ()):
             facts = parse_javascript(path).facts()
             key = hashlib.sha256(str(path).encode()).hexdigest()
             (destination / (key + ".json")).write_text(json.dumps(facts, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
@@ -235,7 +239,8 @@ def audit_javascript_sources(project, source_context, output_dir, *, include_tes
                ("tree-sitter", "tree-sitter-javascript", "tree-sitter-typescript")},
                "sources_complete": source_context["complete"], "modules": modules, "issues": issues,
                "syntax_complete": not issues and bool(modules), "call_graph_implemented": False,
-               "scope": {"include_tests": include_tests, "dependency_node_modules": "separate_locked_instances"},
+               "scope": {"include_tests": include_tests, "dependency_node_modules": "separate_locked_instances",
+                         "excluded_application_roots": [str(Path(p).resolve()) for p in exclude_roots]},
                "counts": {"modules": len(modules), "functions": sum(m["functions"] for m in modules),
                           "calls": sum(m["calls"] for m in modules), "imports": sum(m["imports"] for m in modules)}}
     (destination / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

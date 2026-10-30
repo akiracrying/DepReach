@@ -40,12 +40,13 @@ implementation order, not a completion claim.
 7. **Complete environment and lock support.** Add unresolved Python lock/group
    coverage and npm semver, engines/libc checks; add pnpm/Yarn after npm v2/v3.
    Keep runtime/dev/optional scope and alternative versions explicit.
-8. **Implement JS/TS reachability end to end.** First test Node module resolution
-   (require/import, exports/imports, nested copies, aliases/workspaces) against
-   Node itself without executing target modules. Then bind symbols, build call
-   paths, map immutable patches and integrate evidence into reports. The local
-   node_resolution.py prototype is untested, unconnected and excluded from this
-   publication. Native and other unsupported language boundaries stay explicit.
+8. **Implement JS/TS reachability end to end.** Candidate module lookup is now
+   connected to npm CLI and tested against Node for declared 22/24 default
+   cases. Next resolve lexical CommonJS/ESM bindings, exported values and call
+   paths before mapping immutable fixes. Preserve contextual installation
+   identity, shadowed require/exports, returned values and callbacks. Native,
+   compiler and unsupported loader boundaries remain explicit; npm findings
+   still have unsupported reachability. See NPM.md for current scope.
 9. **Expand independent real-application evaluation.** Add reviewed positive,
    negative and unknown cases beyond the small current corpus, including JS.
    Measure wrong conclusions and abstentions separately. Current labels have
@@ -76,5 +77,6 @@ Remaining checks and work:
 3. Verify the new snapshot-matched caller/function excerpt workflow in a live
    provider account. Explicit-root selection, preview, source hashes, bounded
    excerpts and readable local HTML preview are implemented and locally tested.
-4. Resume Node module resolution validation and the remaining ten analysis
-   requirements above; AI opinions do not replace those implementations.
+4. Continue contextual JS/TS symbol and call-graph work after the new module
+   lookup audit, alongside the remaining ten analysis requirements. AI opinions
+   do not replace those implementations.
